@@ -1178,6 +1178,18 @@ Structure it with:
   // ==========================================
   
   // Custom Regex Client-Side Markdown Parser for results overlay!
+  // HTML-escape any string before injecting into innerHTML. Covers both
+  // text content and quoted attribute values. Use everywhere a string from
+  // localStorage, user input, or AI output is interpolated into HTML.
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function parseMarkdown(mdText) {
     if (!mdText) return '';
     
@@ -1574,16 +1586,17 @@ Structure it with:
         .replace(/\n+/g, ' ')
         .substring(0, 140) + '...';
 
+      const tmplName = (state.templates[m.template] ? state.templates[m.template].name : 'Custom').split(' ')[0];
       card.innerHTML = `
         <div class="card-top">
-          <h3>${m.title}</h3>
-          <span class="badge ${m.template === 'action' ? 'badge-cyan' : 'badge-purple'}">${(state.templates[m.template] ? state.templates[m.template].name : 'Custom').split(' ')[0]}</span>
+          <h3>${esc(m.title)}</h3>
+          <span class="badge ${m.template === 'action' ? 'badge-cyan' : 'badge-purple'}">${esc(tmplName)}</span>
         </div>
-        <div class="card-date">${m.date}</div>
-        <div class="card-teaser">${teaserText}</div>
+        <div class="card-date">${esc(m.date)}</div>
+        <div class="card-teaser">${esc(teaserText)}</div>
         <div class="card-footer">
           <span class="accent-link">Open Highlights →</span>
-          <button class="icon-btn-text delete-meet-btn" data-id="${m.id}" aria-label="Delete meeting">
+          <button class="icon-btn-text delete-meet-btn" data-id="${esc(m.id)}" aria-label="Delete meeting">
             <svg viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" class="mini-icon">
               <polyline points="3 6 5 6 21 6"/>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -1646,7 +1659,7 @@ Structure it with:
 
     toast.innerHTML = `
       <span class="toast-icon">${iconSvg}</span>
-      <span>${message}</span>
+      <span>${esc(message)}</span>
     `;
     
     elements.toastContainer.appendChild(toast);
@@ -2162,19 +2175,20 @@ Structure it with:
       const badgeClass = user.role === 'admin' ? 'badge-purple' : 'badge-cyan';
       const roleLabel = user.role === 'admin' ? 'Admin' : 'Operator';
 
+      const safeUsername = esc(user.username);
       row.innerHTML = `
         <td style="padding: 1rem 0.5rem; font-weight: 500;">
-          ${user.username} ${isSelf ? '<span style="color: var(--text-muted); font-size: 0.8rem; font-weight: normal; margin-left: 4px;">(You)</span>' : ''}
+          ${safeUsername} ${isSelf ? '<span style="color: var(--text-muted); font-size: 0.8rem; font-weight: normal; margin-left: 4px;">(You)</span>' : ''}
         </td>
         <td style="padding: 1rem 0.5rem;">
           <span class="badge ${badgeClass}">${roleLabel}</span>
         </td>
         <td style="padding: 1rem 0.5rem; color: var(--text-muted); font-size: 0.9rem;">
-          ${user.createdAt || 'N/A'}
+          ${esc(user.createdAt || 'N/A')}
         </td>
         <td style="padding: 1rem 0.5rem; text-align: right;">
           <div class="action-group">
-            <button class="action-btn-secondary-mini btn-reset-password" data-username="${user.username}">
+            <button class="action-btn-secondary-mini btn-reset-password" data-username="${safeUsername}">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mini-icon" style="width: 12px; height: 12px;">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -2182,10 +2196,10 @@ Structure it with:
               Reset Pass
             </button>
             ${!isSelf ? `
-              <button class="action-btn-secondary-mini btn-toggle-role" data-username="${user.username}">
+              <button class="action-btn-secondary-mini btn-toggle-role" data-username="${safeUsername}">
                 Role
               </button>
-              <button class="action-btn-danger-mini btn-delete-user" data-username="${user.username}">
+              <button class="action-btn-danger-mini btn-delete-user" data-username="${safeUsername}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mini-icon" style="width: 12px; height: 12px;">
                   <polyline points="3 6 5 6 21 6"/>
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
