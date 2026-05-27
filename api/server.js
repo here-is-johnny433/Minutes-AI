@@ -67,6 +67,18 @@ function sanitizeUser(raw) {
   return s.length > 0 ? s : null;
 }
 
+function sanitizeRole(raw) {
+  const r = String(raw || '').toLowerCase().trim();
+  return r === 'admin' ? 'admin' : 'operator';
+}
+
+// Returns array of subdirectory names (each is one user's archive).
+async function listUserDirs() {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  const entries = await fs.readdir(DATA_DIR, { withFileTypes: true });
+  return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+}
+
 async function ensureUserDir(userDir) {
   await fs.mkdir(userDir, { recursive: true });
 }
@@ -88,29 +100,66 @@ async function findFileById(userDir, id) {
 // Health probe (no user scope)
 app.get('/api/health', (_, res) => res.json({ ok: true, dataDir: DATA_DIR }));
 
-// User-scope middleware: every /api/meetings request must carry an
-// X-Minutes-User header. Sanitized + path-traversal-safe.
+// User-scope middleware. Every /api/meetings request must carry
+// X-Minutes-User; X-Minutes-Role is optional and defaults to 'operator'.
+// Both are sanitized + path-traversal-safe.
 app.use('/api/meetings', (req, res, next) => {
   const u = sanitizeUser(req.get('X-Minutes-User'));
   if (!u) return res.status(400).json({ error: 'missing or invalid X-Minutes-User header' });
   req.scopedUser = u;
+  req.scopedRole = sanitizeRole(req.get('X-Minutes-Role'));
   req.userDir = path.join(DATA_DIR, u);
   next();
 });
 
-// List all meetings for the scoped user (newest first)
-app.get('/api/meetings', async (req, res) => {
-  try {
-    await ensureUserDir(req.userDir);
-    const files = (await fs.readdir(req.userDir)).filter((f) => f.endsWith('.md'));
-    const meetings = [];
+// Walks every user subfolder and returns the first hit for `id`.
+async function findFileGlobally(id) {
+  const users = await listUserDirs();
+  for (const u of users) {
+    const userDir = path.join(DATA_DIR, u);
+    const filename = await findFileById(userDir, id);
+    if (filename) return { userDir, filename, owner: u };
+  }
+  return null;
+}
+
+async function listAllMeetingsAcrossUsers() {
+  const users = await listUserDirs();
+  const all = [];
+  for (const u of users) {
+    const userDir = path.join(DATA_DIR, u);
+    const files = (await fs.readdir(userDir)).filter((f) => f.endsWith('.md'));
     for (const f of files) {
       try {
-        const text = await fs.readFile(path.join(req.userDir, f), 'utf8');
+        const text = await fs.readFile(path.join(userDir, f), 'utf8');
         const m = parse(text);
-        if (m) meetings.push(m);
+        if (m) { m._owner = u; all.push(m); }
       } catch (e) { console.warn('skip', f, e.message); }
     }
+  }
+  return all;
+}
+
+async function listMeetingsForUser(userDir, owner) {
+  await ensureUserDir(userDir);
+  const files = (await fs.readdir(userDir)).filter((f) => f.endsWith('.md'));
+  const out = [];
+  for (const f of files) {
+    try {
+      const text = await fs.readFile(path.join(userDir, f), 'utf8');
+      const m = parse(text);
+      if (m) { m._owner = owner; out.push(m); }
+    } catch (e) { console.warn('skip', f, e.message); }
+  }
+  return out;
+}
+
+// LIST — admin sees everyone, operators see only themselves
+app.get('/api/meetings', async (req, res) => {
+  try {
+    const meetings = req.scopedRole === 'admin'
+      ? await listAllMeetingsAcrossUsers()
+      : await listMeetingsForUser(req.userDir, req.scopedUser);
     meetings.sort((a, b) => (b.rawDate || 0) - (a.rawDate || 0));
     res.json(meetings);
   } catch (e) {
@@ -119,12 +168,19 @@ app.get('/api/meetings', async (req, res) => {
   }
 });
 
-// Get one meeting
+// GET one — admin can read across users
 app.get('/api/meetings/:id', async (req, res) => {
   try {
-    const f = await findFileById(req.userDir, req.params.id);
-    if (!f) return res.status(404).json({ error: 'not found' });
-    const text = await fs.readFile(path.join(req.userDir, f), 'utf8');
+    let dir = req.userDir, filename;
+    if (req.scopedRole === 'admin') {
+      const hit = await findFileGlobally(req.params.id);
+      if (!hit) return res.status(404).json({ error: 'not found' });
+      dir = hit.userDir; filename = hit.filename;
+    } else {
+      filename = await findFileById(req.userDir, req.params.id);
+      if (!filename) return res.status(404).json({ error: 'not found' });
+    }
+    const text = await fs.readFile(path.join(dir, filename), 'utf8');
     const m = parse(text);
     if (!m) return res.status(500).json({ error: 'unparseable' });
     res.json(m);
@@ -134,14 +190,16 @@ app.get('/api/meetings/:id', async (req, res) => {
   }
 });
 
-// Create or update one meeting
+// PUT — always writes to the scoped user's own folder (admin's new meetings
+// land in /data/admin/ just like operators' meetings land in /data/<them>/).
+// Synthesis is the only call site; we never need to "update" someone else's
+// meeting in place.
 app.put('/api/meetings/:id', async (req, res) => {
   try {
     const m = req.body;
     if (!m || !m.id) return res.status(400).json({ error: 'missing id' });
     if (m.id !== req.params.id) return res.status(400).json({ error: 'id mismatch' });
     await ensureUserDir(req.userDir);
-    // If title changed, the filename changes too — remove the old file
     const oldFile = await findFileById(req.userDir, m.id);
     const newFile = filenameFor(m);
     if (oldFile && oldFile !== newFile) {
@@ -155,9 +213,14 @@ app.put('/api/meetings/:id', async (req, res) => {
   }
 });
 
-// Delete one meeting
+// DELETE one — admin can delete any user's meeting; operators only their own
 app.delete('/api/meetings/:id', async (req, res) => {
   try {
+    if (req.scopedRole === 'admin') {
+      const hit = await findFileGlobally(req.params.id);
+      if (hit) await fs.unlink(path.join(hit.userDir, hit.filename)).catch(() => {});
+      return res.json({ ok: true });
+    }
     const f = await findFileById(req.userDir, req.params.id);
     if (f) await fs.unlink(path.join(req.userDir, f)).catch(() => {});
     res.json({ ok: true });
@@ -167,9 +230,20 @@ app.delete('/api/meetings/:id', async (req, res) => {
   }
 });
 
-// Wipe all meetings for the scoped user
+// CLEAR — admin wipes every user's folder; operators wipe only their own
 app.delete('/api/meetings', async (req, res) => {
   try {
+    if (req.scopedRole === 'admin') {
+      const users = await listUserDirs();
+      let removed = 0;
+      for (const u of users) {
+        const userDir = path.join(DATA_DIR, u);
+        const files = (await fs.readdir(userDir)).filter((f) => f.endsWith('.md'));
+        await Promise.all(files.map((f) => fs.unlink(path.join(userDir, f)).catch(() => {})));
+        removed += files.length;
+      }
+      return res.json({ ok: true, removed });
+    }
     await ensureUserDir(req.userDir);
     const files = (await fs.readdir(req.userDir)).filter((f) => f.endsWith('.md'));
     await Promise.all(files.map((f) => fs.unlink(path.join(req.userDir, f)).catch(() => {})));

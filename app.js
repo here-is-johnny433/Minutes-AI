@@ -1579,12 +1579,20 @@ Structure it with:
         .substring(0, 140) + '...';
 
       const tmplName = (state.templates[m.template] ? state.templates[m.template].name : 'Custom').split(' ')[0];
+
+      // Show owner badge when admin is viewing someone else's meeting
+      const viewerIsAdmin = state.currentUser && state.currentUser.role === 'admin';
+      const showOwner = viewerIsAdmin && m._owner && m._owner !== state.currentUser.username;
+      const ownerBadge = showOwner
+        ? `<span class="badge badge-cyan" style="margin-left: 6px; font-size: 0.7rem;">by ${esc(m._owner)}</span>`
+        : '';
+
       card.innerHTML = `
         <div class="card-top">
           <h3>${esc(m.title)}</h3>
           <span class="badge ${m.template === 'action' ? 'badge-cyan' : 'badge-purple'}">${esc(tmplName)}</span>
         </div>
-        <div class="card-date">${esc(m.date)}</div>
+        <div class="card-date">${esc(m.date)}${ownerBadge}</div>
         <div class="card-teaser">${esc(teaserText)}</div>
         <div class="card-footer">
           <span class="accent-link">Open Highlights →</span>
@@ -1717,18 +1725,23 @@ Structure it with:
   // basic_auth at the edge. localStorage acts as a fast-boot cache and
   // offline fallback so the UI is never blank during a server hiccup.
 
-  // Every /api request carries the in-app username so the backend can scope
-  // files to <DATA_DIR>/<username>/. This is best-effort organization, not
-  // real auth — see api/server.js for the trust model.
-  function apiUserHeader() {
+  // Every /api request carries the in-app username + role so the backend can
+  // scope files to <DATA_DIR>/<username>/ (and, for admin, list/delete across
+  // every user's folder). Best-effort organization, not real auth — see
+  // api/server.js for the trust model.
+  function apiAuthHeaders() {
     const u = state.currentUser && state.currentUser.username;
-    return u ? { 'X-Minutes-User': u } : {};
+    const r = state.currentUser && state.currentUser.role;
+    const h = {};
+    if (u) h['X-Minutes-User'] = u;
+    if (r) h['X-Minutes-Role'] = r;
+    return h;
   }
 
   async function apiReadAllMeetings() {
     const r = await fetch('/api/meetings', {
       cache: 'no-store',
-      headers: apiUserHeader()
+      headers: apiAuthHeaders()
     });
     if (!r.ok) throw new Error('GET /api/meetings → ' + r.status);
     return r.json();
@@ -1737,7 +1750,7 @@ Structure it with:
   async function apiWriteMeeting(meeting) {
     const r = await fetch('/api/meetings/' + encodeURIComponent(meeting.id), {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', ...apiUserHeader() },
+      headers: { 'Content-Type': 'application/json', ...apiAuthHeaders() },
       body: JSON.stringify(meeting)
     });
     if (!r.ok) throw new Error('PUT /api/meetings → ' + r.status);
@@ -1748,7 +1761,7 @@ Structure it with:
     const id = typeof meetingOrId === 'string' ? meetingOrId : meetingOrId.id;
     const r = await fetch('/api/meetings/' + encodeURIComponent(id), {
       method: 'DELETE',
-      headers: apiUserHeader()
+      headers: apiAuthHeaders()
     });
     if (!r.ok) throw new Error('DELETE /api/meetings/:id → ' + r.status);
   }
@@ -1756,7 +1769,7 @@ Structure it with:
   async function apiClearAllMeetings() {
     const r = await fetch('/api/meetings', {
       method: 'DELETE',
-      headers: apiUserHeader()
+      headers: apiAuthHeaders()
     });
     if (!r.ok) throw new Error('DELETE /api/meetings → ' + r.status);
   }
