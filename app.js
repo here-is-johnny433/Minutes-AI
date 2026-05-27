@@ -1717,8 +1717,19 @@ Structure it with:
   // basic_auth at the edge. localStorage acts as a fast-boot cache and
   // offline fallback so the UI is never blank during a server hiccup.
 
+  // Every /api request carries the in-app username so the backend can scope
+  // files to <DATA_DIR>/<username>/. This is best-effort organization, not
+  // real auth — see api/server.js for the trust model.
+  function apiUserHeader() {
+    const u = state.currentUser && state.currentUser.username;
+    return u ? { 'X-Minutes-User': u } : {};
+  }
+
   async function apiReadAllMeetings() {
-    const r = await fetch('/api/meetings', { cache: 'no-store' });
+    const r = await fetch('/api/meetings', {
+      cache: 'no-store',
+      headers: apiUserHeader()
+    });
     if (!r.ok) throw new Error('GET /api/meetings → ' + r.status);
     return r.json();
   }
@@ -1726,7 +1737,7 @@ Structure it with:
   async function apiWriteMeeting(meeting) {
     const r = await fetch('/api/meetings/' + encodeURIComponent(meeting.id), {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...apiUserHeader() },
       body: JSON.stringify(meeting)
     });
     if (!r.ok) throw new Error('PUT /api/meetings → ' + r.status);
@@ -1735,12 +1746,18 @@ Structure it with:
 
   async function apiDeleteMeeting(meetingOrId) {
     const id = typeof meetingOrId === 'string' ? meetingOrId : meetingOrId.id;
-    const r = await fetch('/api/meetings/' + encodeURIComponent(id), { method: 'DELETE' });
+    const r = await fetch('/api/meetings/' + encodeURIComponent(id), {
+      method: 'DELETE',
+      headers: apiUserHeader()
+    });
     if (!r.ok) throw new Error('DELETE /api/meetings/:id → ' + r.status);
   }
 
   async function apiClearAllMeetings() {
-    const r = await fetch('/api/meetings', { method: 'DELETE' });
+    const r = await fetch('/api/meetings', {
+      method: 'DELETE',
+      headers: apiUserHeader()
+    });
     if (!r.ok) throw new Error('DELETE /api/meetings → ' + r.status);
   }
 

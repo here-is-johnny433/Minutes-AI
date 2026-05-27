@@ -1,11 +1,16 @@
-// Minutes.AI shared-pool storage backend.
+// Minutes.AI per-user storage backend.
 //
-// Files are stored as `<rawDate>-<slug>.md` in DATA_DIR with the same
-// HTML-comment-frontmatter format the frontend already produces, so a
-// human can `cat` them or open them in any markdown viewer.
+// Files are stored as `<DATA_DIR>/<sanitized-username>/<rawDate>-<slug>.md`
+// with the same HTML-comment-frontmatter format the frontend already
+// produces, so a human can `cat` them or open them in any markdown viewer.
 //
-// No auth here on purpose — Caddy's basic_auth is the boundary. Don't
-// expose this service to the public internet directly.
+// No real auth here — Caddy's basic_auth is the actual boundary at the
+// edge. The X-Minutes-User header that scopes per-user files is trusted
+// best-effort organizational metadata. Anyone past Caddy who knows the
+// API contract could spoof another username via DevTools. Don't treat the
+// per-user separation as a security guarantee — it's a file-organization
+// convenience for "small team that trusts each other but wants their own
+// archive views."
 
 const express = require('express');
 const fs = require('fs').promises;
@@ -56,17 +61,23 @@ function parse(text) {
   }
 }
 
-async function ensureDir() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+function sanitizeUser(raw) {
+  // Allow only [a-z0-9_-], lowercase, max 64 chars. No path traversal.
+  const s = String(raw || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '').slice(0, 64);
+  return s.length > 0 ? s : null;
 }
 
-async function findFileById(id) {
-  await ensureDir();
-  const files = await fs.readdir(DATA_DIR);
+async function ensureUserDir(userDir) {
+  await fs.mkdir(userDir, { recursive: true });
+}
+
+async function findFileById(userDir, id) {
+  await ensureUserDir(userDir);
+  const files = await fs.readdir(userDir);
   for (const f of files) {
     if (!f.endsWith('.md')) continue;
     try {
-      const text = await fs.readFile(path.join(DATA_DIR, f), 'utf8');
+      const text = await fs.readFile(path.join(userDir, f), 'utf8');
       const m = parse(text);
       if (m && m.id === id) return f;
     } catch { /* ignore unreadable file */ }
@@ -74,18 +85,28 @@ async function findFileById(id) {
   return null;
 }
 
-// Health probe
+// Health probe (no user scope)
 app.get('/api/health', (_, res) => res.json({ ok: true, dataDir: DATA_DIR }));
 
-// List all meetings (newest first)
-app.get('/api/meetings', async (_, res) => {
+// User-scope middleware: every /api/meetings request must carry an
+// X-Minutes-User header. Sanitized + path-traversal-safe.
+app.use('/api/meetings', (req, res, next) => {
+  const u = sanitizeUser(req.get('X-Minutes-User'));
+  if (!u) return res.status(400).json({ error: 'missing or invalid X-Minutes-User header' });
+  req.scopedUser = u;
+  req.userDir = path.join(DATA_DIR, u);
+  next();
+});
+
+// List all meetings for the scoped user (newest first)
+app.get('/api/meetings', async (req, res) => {
   try {
-    await ensureDir();
-    const files = (await fs.readdir(DATA_DIR)).filter((f) => f.endsWith('.md'));
+    await ensureUserDir(req.userDir);
+    const files = (await fs.readdir(req.userDir)).filter((f) => f.endsWith('.md'));
     const meetings = [];
     for (const f of files) {
       try {
-        const text = await fs.readFile(path.join(DATA_DIR, f), 'utf8');
+        const text = await fs.readFile(path.join(req.userDir, f), 'utf8');
         const m = parse(text);
         if (m) meetings.push(m);
       } catch (e) { console.warn('skip', f, e.message); }
@@ -101,9 +122,9 @@ app.get('/api/meetings', async (_, res) => {
 // Get one meeting
 app.get('/api/meetings/:id', async (req, res) => {
   try {
-    const f = await findFileById(req.params.id);
+    const f = await findFileById(req.userDir, req.params.id);
     if (!f) return res.status(404).json({ error: 'not found' });
-    const text = await fs.readFile(path.join(DATA_DIR, f), 'utf8');
+    const text = await fs.readFile(path.join(req.userDir, f), 'utf8');
     const m = parse(text);
     if (!m) return res.status(500).json({ error: 'unparseable' });
     res.json(m);
@@ -119,14 +140,14 @@ app.put('/api/meetings/:id', async (req, res) => {
     const m = req.body;
     if (!m || !m.id) return res.status(400).json({ error: 'missing id' });
     if (m.id !== req.params.id) return res.status(400).json({ error: 'id mismatch' });
-    await ensureDir();
+    await ensureUserDir(req.userDir);
     // If title changed, the filename changes too — remove the old file
-    const oldFile = await findFileById(m.id);
+    const oldFile = await findFileById(req.userDir, m.id);
     const newFile = filenameFor(m);
     if (oldFile && oldFile !== newFile) {
-      await fs.unlink(path.join(DATA_DIR, oldFile)).catch(() => {});
+      await fs.unlink(path.join(req.userDir, oldFile)).catch(() => {});
     }
-    await fs.writeFile(path.join(DATA_DIR, newFile), serialize(m));
+    await fs.writeFile(path.join(req.userDir, newFile), serialize(m));
     res.json({ ok: true, filename: newFile });
   } catch (e) {
     console.error(e);
@@ -137,8 +158,8 @@ app.put('/api/meetings/:id', async (req, res) => {
 // Delete one meeting
 app.delete('/api/meetings/:id', async (req, res) => {
   try {
-    const f = await findFileById(req.params.id);
-    if (f) await fs.unlink(path.join(DATA_DIR, f)).catch(() => {});
+    const f = await findFileById(req.userDir, req.params.id);
+    if (f) await fs.unlink(path.join(req.userDir, f)).catch(() => {});
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -146,12 +167,12 @@ app.delete('/api/meetings/:id', async (req, res) => {
   }
 });
 
-// Wipe all meetings
-app.delete('/api/meetings', async (_, res) => {
+// Wipe all meetings for the scoped user
+app.delete('/api/meetings', async (req, res) => {
   try {
-    await ensureDir();
-    const files = (await fs.readdir(DATA_DIR)).filter((f) => f.endsWith('.md'));
-    await Promise.all(files.map((f) => fs.unlink(path.join(DATA_DIR, f)).catch(() => {})));
+    await ensureUserDir(req.userDir);
+    const files = (await fs.readdir(req.userDir)).filter((f) => f.endsWith('.md'));
+    await Promise.all(files.map((f) => fs.unlink(path.join(req.userDir, f)).catch(() => {})));
     res.json({ ok: true, removed: files.length });
   } catch (e) {
     console.error(e);
