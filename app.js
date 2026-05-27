@@ -1674,6 +1674,47 @@ Structure it with:
   }
 
   // ==========================================
+  // 10.3. PASSWORD HASHING (SHA-256 + per-user random salt)
+  // ==========================================
+  // Stored format: "sha256$<saltHex>$<hashHex>"
+  // Legacy plaintext entries (no `sha256$` prefix) are accepted on login
+  // for backward compatibility, then transparently upgraded to a hash.
+
+  function pwBytesToHex(bytes) {
+    return Array.from(new Uint8Array(bytes)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function pwGenerateSalt() {
+    const buf = new Uint8Array(16);
+    crypto.getRandomValues(buf);
+    return pwBytesToHex(buf);
+  }
+
+  async function pwComputeHash(password, saltHex) {
+    const data = new TextEncoder().encode(saltHex + ':' + password);
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    return pwBytesToHex(digest);
+  }
+
+  async function pwHash(password) {
+    const salt = pwGenerateSalt();
+    const hash = await pwComputeHash(password, salt);
+    return `sha256$${salt}$${hash}`;
+  }
+
+  async function pwVerify(password, stored) {
+    if (typeof stored !== 'string') return { ok: false, legacy: false };
+    if (stored.startsWith('sha256$')) {
+      const [, salt, expected] = stored.split('$');
+      if (!salt || !expected) return { ok: false, legacy: false };
+      const actual = await pwComputeHash(password, salt);
+      return { ok: actual === expected, legacy: false };
+    }
+    // Legacy: stored value is the plaintext password
+    return { ok: stored === password, legacy: true };
+  }
+
+  // ==========================================
   // 10.4. FILE-BASED MEETING STORAGE (File System Access API)
   // ==========================================
 
@@ -1899,8 +1940,10 @@ Structure it with:
   // ==========================================
 
   function initUserAuth() {
-    // 1. Seed default Admin account if first boot
-    seedDefaultAdmin();
+    // 1. Seed default Admin account if first boot (fire-and-forget; the
+    // login form won't be submitted before this resolves under any plausible
+    // human timing, and a failure is logged via the awaited promise)
+    seedDefaultAdmin().catch((e) => console.error("seedDefaultAdmin failed", e));
 
     // 2. Event Listener: Login Submission
     elements.authForm.addEventListener('submit', async (e) => {
@@ -1920,7 +1963,27 @@ Structure it with:
         console.error("Failed to load users for authentication check", err);
       }
 
-      const match = users.find(u => u.username === username && u.passwordHash === password);
+      let match = null;
+      let matchedLegacy = false;
+      for (const u of users) {
+        if (u.username !== username) continue;
+        const result = await pwVerify(password, u.passwordHash);
+        if (result.ok) {
+          match = u;
+          matchedLegacy = result.legacy;
+        }
+        break;
+      }
+
+      // Auto-upgrade legacy plaintext entries to a salted hash on successful login
+      if (match && matchedLegacy) {
+        try {
+          match.passwordHash = await pwHash(password);
+          localStorage.setItem('minutae_users', JSON.stringify(users));
+        } catch (e) {
+          console.warn("Failed to upgrade legacy password hash", e);
+        }
+      }
 
       if (match) {
         // Session creation
@@ -2015,7 +2078,7 @@ Structure it with:
     elements.btnCloseCreateUser.addEventListener('click', closeCreateUserDialog);
     elements.btnCancelCreateUser.addEventListener('click', closeCreateUserDialog);
 
-    elements.createUserForm.addEventListener('submit', (e) => {
+    elements.createUserForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const username = elements.createUsername.value.trim().toLowerCase();
       const password = elements.createPassword.value;
@@ -2048,7 +2111,7 @@ Structure it with:
 
       const newUser = {
         username: username,
-        passwordHash: password,
+        passwordHash: await pwHash(password),
         role: role,
         createdAt: new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
       };
@@ -2090,7 +2153,7 @@ Structure it with:
   }
 
   // Seeding default administrator profile
-  function seedDefaultAdmin() {
+  async function seedDefaultAdmin() {
     let users = [];
     try {
       users = JSON.parse(localStorage.getItem('minutae_users') || '[]');
@@ -2102,7 +2165,7 @@ Structure it with:
       users = [
         {
           username: 'admin',
-          passwordHash: 'admin123',
+          passwordHash: await pwHash('admin123'),
           role: 'admin',
           createdAt: new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
         }
@@ -2230,10 +2293,10 @@ Structure it with:
   }
 
   // Operator CRUD triggers
-  function resetOperatorPassword(username) {
+  async function resetOperatorPassword(username) {
     const newPassword = prompt(`Enter new password for ${username} (min 4 characters):`);
-    if (newPassword === null) return; 
-    
+    if (newPassword === null) return;
+
     if (newPassword.length < 4) {
       showToast("Password must be at least 4 characters long.", "error");
       return;
@@ -2248,7 +2311,7 @@ Structure it with:
 
     const index = users.findIndex(u => u.username === username);
     if (index !== -1) {
-      users[index].passwordHash = newPassword;
+      users[index].passwordHash = await pwHash(newPassword);
       localStorage.setItem('minutae_users', JSON.stringify(users));
       showToast(`Passcode for ${username} has been updated successfully.`, "success");
     }
