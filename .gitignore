@@ -13,8 +13,11 @@
 *.log
 npm-debug.log*
 
-# Dependencies (if any tooling spawns them later)
+# Dependencies (api/ npm install creates this inside the docker build,
+# but if you run `npm install` on the host for testing it ends up here)
 node_modules/
+api/node_modules/
+api/package-lock.json
 
 # Claude Code local-only state
 .claude/settings.local.json

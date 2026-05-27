@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     dictationLang: localStorage.getItem('minutae_dictation_lang') || 'en-US',
     currentUser: null,
     meetings: [],
-    meetingsDirHandle: null,
     inputMethod: 'microphone', // 'text' | 'microphone' | 'audio-file' | 'text-file'
     audioFile: { name: '', size: '', mimeType: '', base64: '' },
     textFile: { name: '', size: '' },
@@ -162,9 +161,6 @@ Structure it with:
     localDownloadProgressFill: document.getElementById('local-download-progress-fill'),
     localDownloadPct: document.getElementById('local-download-pct'),
     btnClearArchive: document.getElementById('btn-clear-archive'),
-    btnPickMeetingsDir: document.getElementById('btn-pick-meetings-dir'),
-    btnClearMeetingsDir: document.getElementById('btn-clear-meetings-dir'),
-    meetingsDirStatus: document.getElementById('meetings-dir-status'),
     optionLocalAi: document.getElementById('option-local-ai'),
     templateEditSelect: document.getElementById('template-edit-select'),
     templateEditName: document.getElementById('template-edit-name'),
@@ -705,12 +701,10 @@ Structure it with:
     // Clear archive
     elements.btnClearArchive.addEventListener('click', async () => {
       if (confirm("Are you absolutely sure you want to permanently delete all archived meeting minutes? This operation is irreversible.")) {
-        if (state.meetingsDirHandle) {
-          try { await fsClearAllMeetings(); }
-          catch (err) {
-            console.warn("Failed to clear .md files from folder", err);
-            showToast("Browser archive cleared, but some .md files could not be deleted.", "warning");
-          }
+        try { await apiClearAllMeetings(); }
+        catch (err) {
+          console.warn("Failed to clear meetings on server", err);
+          showToast("Local archive cleared, but server delete failed: " + (err.message || err.name), "warning");
         }
         state.meetings = [];
         localStorage.setItem('minutae_meetings_' + state.currentUser.username, '[]');
@@ -1399,12 +1393,10 @@ Structure it with:
 
       state.meetings.unshift(newMeeting);
       localStorage.setItem('minutae_meetings_' + state.currentUser.username, JSON.stringify(state.meetings));
-      if (state.meetingsDirHandle) {
-        try { await fsWriteMeeting(newMeeting); }
-        catch (err) {
-          console.error("Failed to save meeting .md file", err);
-          showToast("Saved to browser, but could not write .md file: " + (err.message || err.name), "warning");
-        }
+      try { await apiWriteMeeting(newMeeting); }
+      catch (err) {
+        console.error("Failed to push meeting to server", err);
+        showToast("Saved to cache, but could not sync to server: " + (err.message || err.name), "warning");
       }
 
       elements.generatingDialog.close();
@@ -1621,9 +1613,12 @@ Structure it with:
           const target = state.meetings.find(meet => meet.id === idToDelete);
           state.meetings = state.meetings.filter(meet => meet.id !== idToDelete);
           localStorage.setItem('minutae_meetings_' + state.currentUser.username, JSON.stringify(state.meetings));
-          if (target && state.meetingsDirHandle) {
-            try { await fsDeleteMeeting(target); }
-            catch (err) { console.warn("Failed to remove .md file", err); }
+          if (target) {
+            try { await apiDeleteMeeting(target); }
+            catch (err) {
+              console.warn("Failed to delete meeting on server", err);
+              showToast("Removed locally, but server delete failed: " + (err.message || err.name), "warning");
+            }
           }
           renderArchiveGrid();
           showToast("Meeting deleted", "info");
@@ -1715,224 +1710,60 @@ Structure it with:
   }
 
   // ==========================================
-  // 10.4. FILE-BASED MEETING STORAGE (File System Access API)
+  // 10.4. SERVER-SIDE MEETING STORAGE (shared pool via /api)
   // ==========================================
+  // Meetings live as .md files in the api container's docker volume. All
+  // in-app users share the same pool — the access boundary is Caddy's
+  // basic_auth at the edge. localStorage acts as a fast-boot cache and
+  // offline fallback so the UI is never blank during a server hiccup.
 
-  const FS_SUPPORTED = typeof window.showDirectoryPicker === 'function';
-  const FS_IDB_NAME = 'minutae-fs';
-  const FS_IDB_STORE = 'handles';
+  async function apiReadAllMeetings() {
+    const r = await fetch('/api/meetings', { cache: 'no-store' });
+    if (!r.ok) throw new Error('GET /api/meetings → ' + r.status);
+    return r.json();
+  }
 
-  function fsIdbOpen() {
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open(FS_IDB_NAME, 1);
-      req.onupgradeneeded = () => req.result.createObjectStore(FS_IDB_STORE);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
+  async function apiWriteMeeting(meeting) {
+    const r = await fetch('/api/meetings/' + encodeURIComponent(meeting.id), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(meeting)
     });
+    if (!r.ok) throw new Error('PUT /api/meetings → ' + r.status);
+    return r.json();
   }
 
-  async function fsIdbGet(key) {
-    const db = await fsIdbOpen();
-    return new Promise((resolve, reject) => {
-      const req = db.transaction(FS_IDB_STORE, 'readonly').objectStore(FS_IDB_STORE).get(key);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+  async function apiDeleteMeeting(meetingOrId) {
+    const id = typeof meetingOrId === 'string' ? meetingOrId : meetingOrId.id;
+    const r = await fetch('/api/meetings/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!r.ok) throw new Error('DELETE /api/meetings/:id → ' + r.status);
   }
 
-  async function fsIdbSet(key, value) {
-    const db = await fsIdbOpen();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(FS_IDB_STORE, 'readwrite');
-      tx.objectStore(FS_IDB_STORE).put(value, key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+  async function apiClearAllMeetings() {
+    const r = await fetch('/api/meetings', { method: 'DELETE' });
+    if (!r.ok) throw new Error('DELETE /api/meetings → ' + r.status);
   }
 
-  async function fsIdbDelete(key) {
-    const db = await fsIdbOpen();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(FS_IDB_STORE, 'readwrite');
-      tx.objectStore(FS_IDB_STORE).delete(key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  }
-
-  function fsDirKey(username) { return 'meetingsDir:' + username; }
-
-  async function fsEnsurePermission(handle, mode = 'readwrite') {
-    if (!handle) return false;
-    const opts = { mode };
-    if ((await handle.queryPermission(opts)) === 'granted') return true;
-    if ((await handle.requestPermission(opts)) === 'granted') return true;
-    return false;
-  }
-
-  function fsSlug(s) {
-    return (s || 'untitled').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
-  }
-
-  function fsMeetingFilename(m) {
-    return `${m.rawDate || Date.now()}-${fsSlug(m.title)}.md`;
-  }
-
-  function fsSerializeMeeting(m) {
-    const meta = {
-      id: m.id, title: m.title, date: m.date, rawDate: m.rawDate,
-      template: m.template, transcript: m.transcript || '', notes: m.notes || ''
-    };
-    return `<!--meeting-meta\n${JSON.stringify(meta)}\n-->\n\n# ${m.title}\n\n${m.summary || ''}\n`;
-  }
-
-  function fsParseMeeting(text) {
-    const match = text.match(/<!--meeting-meta\n([\s\S]*?)\n-->/);
-    if (!match) return null;
+  // Pull the authoritative list from the server. If the server is empty
+  // but localStorage has cached meetings (e.g., migrating from the old
+  // File System Access API flow), push them up before returning.
+  async function syncMeetingsFromServer() {
     try {
-      const meta = JSON.parse(match[1]);
-      const body = text.slice(match[0].length).replace(/^\s*#[^\n]*\n+/, '').trim();
-      return { ...meta, summary: body };
+      const remote = await apiReadAllMeetings();
+      const local = Array.isArray(state.meetings) ? state.meetings : [];
+      if (remote.length === 0 && local.length > 0) {
+        for (const m of local) {
+          try { await apiWriteMeeting(m); }
+          catch (e) { console.warn('migrate failed for', m && m.id, e); }
+        }
+        showToast(`Migrated ${local.length} cached meeting(s) to server storage.`, "success");
+        return await apiReadAllMeetings();
+      }
+      return remote;
     } catch (e) {
-      console.warn('Failed to parse meeting frontmatter', e);
+      console.warn('Server storage unreachable; using localStorage cache.', e);
       return null;
     }
-  }
-
-  function fsUserSubdirName(username) {
-    return (username || 'user').toLowerCase().replace(/[^a-z0-9_-]+/g, '_').slice(0, 64) || 'user';
-  }
-
-  // Returns the per-user subdirectory handle inside the configured root,
-  // creating it on first use. Each user is isolated to their own subfolder.
-  async function fsGetUserHandle() {
-    const root = state.meetingsDirHandle;
-    if (!root || !state.currentUser) return null;
-    if (!(await fsEnsurePermission(root))) return null;
-    const subName = fsUserSubdirName(state.currentUser.username);
-    return root.getDirectoryHandle(subName, { create: true });
-  }
-
-  async function fsWriteMeeting(meeting) {
-    const userHandle = await fsGetUserHandle();
-    if (!userHandle) return null;
-    const filename = fsMeetingFilename(meeting);
-    const fileHandle = await userHandle.getFileHandle(filename, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(fsSerializeMeeting(meeting));
-    await writable.close();
-    return filename;
-  }
-
-  async function fsDeleteMeeting(meeting) {
-    const userHandle = await fsGetUserHandle();
-    if (!userHandle) return;
-    try { await userHandle.removeEntry(fsMeetingFilename(meeting)); }
-    catch (e) { /* file may have been removed externally */ }
-  }
-
-  async function fsReadAllMeetings() {
-    const userHandle = await fsGetUserHandle();
-    if (!userHandle) return null;
-    const meetings = [];
-    for await (const entry of userHandle.values()) {
-      if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue;
-      try {
-        const text = await (await entry.getFile()).text();
-        const m = fsParseMeeting(text);
-        if (m) meetings.push(m);
-      } catch (e) {
-        console.warn('Failed to read meeting file', entry.name, e);
-      }
-    }
-    return meetings.sort((a, b) => (b.rawDate || 0) - (a.rawDate || 0));
-  }
-
-  async function fsClearAllMeetings() {
-    const userHandle = await fsGetUserHandle();
-    if (!userHandle) return;
-    const toRemove = [];
-    for await (const entry of userHandle.values()) {
-      if (entry.kind === 'file' && entry.name.endsWith('.md')) toRemove.push(entry.name);
-    }
-    await Promise.all(toRemove.map((n) => userHandle.removeEntry(n).catch(() => {})));
-  }
-
-  async function fsLoadDirForUser() {
-    if (!FS_SUPPORTED || !state.currentUser) return null;
-    const handle = await fsIdbGet(fsDirKey(state.currentUser.username));
-    if (!handle) return null;
-    state.meetingsDirHandle = handle;
-    return handle;
-  }
-
-  function fsUpdateStatusUI() {
-    if (!elements.meetingsDirStatus) return;
-    if (!FS_SUPPORTED) {
-      elements.meetingsDirStatus.textContent = "Folder storage is unavailable in this browser. Use Chrome or Edge for file-based archives.";
-      elements.btnPickMeetingsDir.disabled = true;
-      return;
-    }
-    if (state.meetingsDirHandle) {
-      const subName = state.currentUser ? fsUserSubdirName(state.currentUser.username) : '';
-      const path = subName ? `${state.meetingsDirHandle.name}/${subName}` : state.meetingsDirHandle.name;
-      elements.meetingsDirStatus.textContent = `Saving to folder: ${path} (isolated per user)`;
-      elements.meetingsDirStatus.style.color = 'var(--accent-cyan)';
-      elements.btnPickMeetingsDir.textContent = 'Change Folder';
-      elements.btnClearMeetingsDir.style.display = 'block';
-    } else {
-      elements.meetingsDirStatus.textContent = "No folder configured — meetings live in browser storage only.";
-      elements.meetingsDirStatus.style.color = '';
-      elements.btnPickMeetingsDir.textContent = 'Choose Folder';
-      elements.btnClearMeetingsDir.style.display = 'none';
-    }
-  }
-
-  function initMeetingsDirUI() {
-    fsUpdateStatusUI();
-    if (!FS_SUPPORTED) return;
-
-    elements.btnPickMeetingsDir.addEventListener('click', async () => {
-      try {
-        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-        await fsIdbSet(fsDirKey(state.currentUser.username), handle);
-        state.meetingsDirHandle = handle;
-        fsUpdateStatusUI();
-
-        // Migrate existing localStorage meetings if folder is empty
-        const existing = await fsReadAllMeetings();
-        if (existing && existing.length === 0 && state.meetings.length > 0) {
-          if (confirm(`Migrate ${state.meetings.length} existing meeting(s) into "${handle.name}" as .md files?`)) {
-            for (const m of state.meetings) {
-              try { await fsWriteMeeting(m); } catch (e) { console.error('Migrate failed for', m.id, e); }
-            }
-            showToast(`Migrated ${state.meetings.length} meeting(s) to folder.`, "success");
-          }
-        }
-
-        // Now reload from folder (authoritative)
-        const fromFolder = await fsReadAllMeetings();
-        if (fromFolder) {
-          state.meetings = fromFolder;
-          localStorage.setItem('minutae_meetings_' + state.currentUser.username, JSON.stringify(state.meetings));
-          renderArchiveGrid();
-        }
-        showToast(`Folder set: ${handle.name}`, "success");
-      } catch (e) {
-        if (e.name !== 'AbortError') {
-          console.error('Folder pick failed', e);
-          showToast("Could not access the chosen folder.", "error");
-        }
-      }
-    });
-
-    elements.btnClearMeetingsDir.addEventListener('click', async () => {
-      if (!confirm("Forget the meetings folder? Existing .md files are NOT deleted from disk. The app will fall back to browser-storage-only.")) return;
-      await fsIdbDelete(fsDirKey(state.currentUser.username));
-      state.meetingsDirHandle = null;
-      fsUpdateStatusUI();
-      showToast("Folder disconnected. Meetings now live in browser storage only.", "info");
-    });
   }
 
   // ==========================================
@@ -1994,21 +1825,13 @@ Structure it with:
         };
         sessionStorage.setItem('minutae_current_user', JSON.stringify(state.currentUser));
 
-        // Load isolated meeting transcripts (folder first if configured, else localStorage)
+        // Load meetings: localStorage cache for instant render, then sync from server
         state.meetings = JSON.parse(localStorage.getItem('minutae_meetings_' + state.currentUser.username) || '[]');
-        try {
-          await fsLoadDirForUser();
-          if (state.meetingsDirHandle) {
-            const fromFolder = await fsReadAllMeetings();
-            if (fromFolder) {
-              state.meetings = fromFolder;
-              localStorage.setItem('minutae_meetings_' + state.currentUser.username, JSON.stringify(state.meetings));
-            }
-          }
-        } catch (err) {
-          console.warn("Folder-based meeting load failed; using localStorage cache.", err);
+        const fromServer = await syncMeetingsFromServer();
+        if (fromServer) {
+          state.meetings = fromServer;
+          localStorage.setItem('minutae_meetings_' + state.currentUser.username, JSON.stringify(state.meetings));
         }
-        fsUpdateStatusUI();
 
         // Trigger dynamic migration for legacy meetings if logging in as Admin
         if (state.currentUser.username === 'admin') {
@@ -2366,7 +2189,6 @@ Structure it with:
     refreshTemplateSelectors();
     initSettingsPanel();
     initVoiceDictation();
-    initMeetingsDirUI();
     initUserAuth();
   }
 

@@ -3,24 +3,23 @@
 # Copy this file to `docker-compose.override.yml` (it's git-ignored) and
 # Docker Compose will merge it on top of docker-compose.yml automatically.
 #
-# This restores a host port mapping so the app is reachable at
-# http://localhost:8081 without needing the Caddy reverse proxy that
-# the production deployment uses.
+# This:
+#   - Restores a host port mapping so the app is reachable at http://localhost:8081
+#   - Replaces the production `web-net` external network with a plain bridge
+#     so you don't have to create that network by hand.
 #
 #     cp docker-compose.override.example.yml docker-compose.override.yml
-#     docker compose up -d
+#     docker compose up -d --build
 #     open http://localhost:8081
 
 services:
   app:
     ports:
       - "8081:80"
-    # The base file lists `web-net` as an external network; that network
-    # only exists in production. Drop it for local dev.
-    networks:
-      - default
 
-# Override the base file's external `web-net` reference with an empty
-# definition so `docker compose up` doesn't fail when web-net isn't present.
 networks:
-  web-net: null
+  # The base file declares `web-net` as `external: true` (production has it
+  # provisioned by the Caddy host). Locally we redefine it as a plain
+  # in-stack network so `docker compose up` doesn't fail.
+  web-net:
+    external: false

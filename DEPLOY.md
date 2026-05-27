@@ -26,10 +26,18 @@ Open **http://localhost:8081**. Hot-reload via the bind mount: edit `index.html`
 ### Architecture
 
 ```
-Internet  →  Caddy (TLS + basic_auth)  →  docker web-net  →  minutes-ai-app  →  nginx  →  static SPA
+Internet  →  Caddy (TLS + basic_auth)  →  docker web-net  →  minutes-ai-app (nginx + static SPA)
+                                                                          │
+                                                                          │ /api/* (default docker network)
+                                                                          ↓
+                                                                  minutes-ai-api (Node + Express)
+                                                                          │
+                                                                          ↓
+                                                                  meetings_data volume (.md files)
 ```
 
-The app container has **no host port mapping** — Caddy reaches it by container name (`minutes-ai-app`) over a shared docker network called `web-net`. Bypassing Caddy from the public internet is therefore impossible.
+- The **app container** has no host port mapping — Caddy reaches it by container name (`minutes-ai-app`) over a shared docker network called `web-net`. Bypassing Caddy from the public internet is therefore impossible.
+- The **api container** has no host port mapping at all — it is only reachable from the app container over the default docker network, and the app's nginx proxies `/api/*` to it. Meetings are stored as `.md` files in a docker named volume (`meetings_data`) and survive container rebuilds.
 
 ### One-time server setup
 
@@ -122,7 +130,20 @@ git pull
 docker compose up -d --force-recreate
 ```
 
-Bind-mounted source files (`app.js`, `index.html`, `styles.css`) update on refresh — no recreate needed. **Recreate only when `nginx.conf` changes** (it's a single-file mount).
+Bind-mounted source files (`app.js`, `index.html`, `styles.css`) update on refresh — no recreate needed. **Recreate only when `nginx.conf` changes** (it's a single-file mount) **or when `api/server.js` changes** (the api container needs a rebuild + restart to pick up backend changes — `docker compose up -d --build`).
+
+### Inspecting / backing up meeting storage
+
+The api container persists every meeting to `/data/<rawDate>-<slug>.md` inside a docker named volume:
+
+```bash
+# List all meeting files on the host
+docker run --rm -v meeting-ai_meetings_data:/data alpine ls -la /data
+
+# Tarball backup of the whole archive
+docker run --rm -v meeting-ai_meetings_data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/minutes-ai-meetings-$(date +%F).tar.gz -C /data .
+```
 
 ---
 

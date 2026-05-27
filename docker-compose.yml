@@ -18,6 +18,24 @@ services:
     networks:
       - default
       - web-net
+    depends_on:
+      - api
+
+  api:
+    image: minutes-ai-api:latest
+    container_name: minutes-ai-api
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      # Persistent meeting storage. Survives container rebuilds and `down`.
+      # Inspect with: docker run --rm -v minutes-ai_meetings_data:/data alpine ls /data
+      - meetings_data:/data
+    networks:
+      - default
+    # No host port mapping — only the app container (via the default network)
+    # talks to /api/*, and nginx proxies external requests to it.
 
 networks:
   # Shared external network for the Caddy reverse proxy (see DEPLOY.md).
@@ -25,3 +43,6 @@ networks:
   # file makes web-net optional.
   web-net:
     external: true
+
+volumes:
+  meetings_data:

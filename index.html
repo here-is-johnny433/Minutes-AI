@@ -564,31 +564,7 @@ Our AI combines these notes directly with the transcript to resolve context gaps
               </div>
             </div>
 
-            <!-- Card 3: Meetings Folder (File System Access API) -->
-            <div class="workspace-card glass-panel">
-              <div class="card-header border-b">
-                <h2 class="card-title">Meetings Folder</h2>
-              </div>
-              <div class="card-content">
-                <div class="flex-between">
-                  <div>
-                    <h4>Save Meeting Minutes as .md Files</h4>
-                    <p class="field-hint">Pick a folder on your computer. Each user gets their own subfolder (e.g., <code>&lt;folder&gt;/admin/</code>) so meetings stay isolated per account. Each synthesized meeting becomes a real <code>.md</code> file inside your subfolder. Chrome / Edge only.</p>
-                    <p id="meetings-dir-status" class="field-hint" style="margin-top: 0.5rem; color: var(--text-secondary);">No folder configured — meetings live in browser storage only.</p>
-                  </div>
-                  <div style="display: flex; flex-direction: column; gap: 0.5rem; min-width: 160px;">
-                    <button id="btn-pick-meetings-dir" class="action-btn-secondary">
-                      Choose Folder
-                    </button>
-                    <button id="btn-clear-meetings-dir" class="danger-btn-secondary" style="display: none;">
-                      Forget Folder
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Card 4: Local Cache Manager -->
+            <!-- Card 3: Local Cache Manager -->
             <div class="workspace-card glass-panel">
               <div class="card-header border-b">
                 <h2 class="card-title">Local Data Maintenance</h2>
@@ -597,7 +573,7 @@ Our AI combines these notes directly with the transcript to resolve context gaps
                 <div class="flex-between">
                   <div>
                     <h4>Clear Local Meeting Archive</h4>
-                    <p class="field-hint">Permanently deletes all archived summaries. If a folder is configured, the <code>.md</code> files in that folder are deleted too. This cannot be undone.</p>
+                    <p class="field-hint">Permanently deletes all archived summaries from the server (shared pool) and your browser cache. This cannot be undone.</p>
                   </div>
                   <button id="btn-clear-archive" class="danger-btn-secondary">
                     Clear Archive
