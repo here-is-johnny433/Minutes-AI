@@ -18,3 +18,6 @@ node_modules/
 
 # Claude Code local-only state
 .claude/settings.local.json
+
+# Local Docker Compose override (see docker-compose.override.example.yml)
+docker-compose.override.yml
