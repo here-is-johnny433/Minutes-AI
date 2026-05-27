@@ -4,13 +4,15 @@
 # ==========================================================================
 # This script hooks up your running Docker container to your local code files.
 # It uses bind mounts so that any changes you make to index.html, app.js,
-# styles.css, or nginx.conf are reflected instantly at http://localhost:8080.
+# styles.css, or nginx.conf are reflected instantly at http://localhost:${PORT}.
 # ==========================================================================
 
 CONTAINER_NAME="minutes-ai-app"
 IMAGE_NAME="minutes-ai"
-PORT="8080"
-WORKSPACE_DIR="/Users/stephantinschert/Documents/Apps/Janus"
+PORT="8081"
+# Resolve the project directory from the script's own location so the script
+# works for anyone who clones the repo, regardless of where they put it.
+WORKSPACE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "🚀 Setting up live development environment for Minutes.AI..."
 
