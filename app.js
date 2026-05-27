@@ -23,6 +23,13 @@ document.addEventListener('DOMContentLoaded', () => {
     recognition: null,
     recordingStartTime: 0,
     recordingTimerInterval: null,
+    // Parallel high-quality audio capture: MediaRecorder buffers the raw
+    // mic audio while Web Speech runs as a rough live preview. On stop we
+    // hand the buffered audio to Gemini for a real transcript.
+    mediaRecorder: null,
+    micStream: null,
+    audioChunks: [],
+    audioChunksMime: '',
     recordedText: '',
     networkRetryCount: 0,
     lastErrorType: null,
@@ -1080,6 +1087,159 @@ Structure it with:
     }
   }
 
+  // ==========================================
+  // HIGH-QUALITY AUDIO BUFFER (Gemini ASR)
+  // ==========================================
+  // Web Speech runs as a rough live preview; in parallel we buffer the
+  // actual microphone audio and, on stop, send it to Gemini 2.5 Flash
+  // multimodal for a real transcript that overwrites the textarea.
+
+  function pickAudioMimeType() {
+    if (typeof MediaRecorder === 'undefined') return '';
+    // Prefer formats Gemini supports natively. Chrome will likely fall
+    // through to audio/webm; Gemini accepts that empirically too.
+    const candidates = [
+      'audio/ogg;codecs=opus',
+      'audio/mp4;codecs=mp4a.40.2',
+      'audio/mp4',
+      'audio/webm;codecs=opus',
+      'audio/webm'
+    ];
+    for (const c of candidates) {
+      if (MediaRecorder.isTypeSupported(c)) return c;
+    }
+    return '';
+  }
+
+  async function startParallelAudioBuffer() {
+    if (!navigator.mediaDevices || typeof MediaRecorder === 'undefined') return false;
+    try {
+      state.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      console.warn('[AudioCapture] getUserMedia failed', e);
+      return false;
+    }
+    state.audioChunks = [];
+    state.audioChunksMime = pickAudioMimeType();
+    const opts = state.audioChunksMime ? { mimeType: state.audioChunksMime } : {};
+    try {
+      state.mediaRecorder = new MediaRecorder(state.micStream, opts);
+    } catch (e) {
+      // Browser rejected our preferred MIME; let it pick its own
+      try {
+        state.mediaRecorder = new MediaRecorder(state.micStream);
+        state.audioChunksMime = state.mediaRecorder.mimeType || '';
+      } catch (e2) {
+        console.warn('[AudioCapture] MediaRecorder construct failed', e2);
+        state.micStream.getTracks().forEach((t) => t.stop());
+        state.micStream = null;
+        return false;
+      }
+    }
+    state.audioChunksMime = state.audioChunksMime || state.mediaRecorder.mimeType || 'audio/webm';
+    state.mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) state.audioChunks.push(e.data);
+    };
+    state.mediaRecorder.start(2000); // flush a chunk every 2s
+    return true;
+  }
+
+  async function stopParallelAudioBuffer() {
+    if (!state.mediaRecorder) {
+      // Stream might still be open if MediaRecorder failed to start
+      if (state.micStream) {
+        state.micStream.getTracks().forEach((t) => t.stop());
+        state.micStream = null;
+      }
+      return null;
+    }
+    return new Promise((resolve) => {
+      state.mediaRecorder.onstop = () => {
+        const mime = (state.audioChunksMime || 'audio/webm').split(';')[0];
+        const blob = new Blob(state.audioChunks, { type: mime });
+        state.audioChunks = [];
+        state.mediaRecorder = null;
+        if (state.micStream) {
+          state.micStream.getTracks().forEach((t) => t.stop());
+          state.micStream = null;
+        }
+        resolve({ blob, mime });
+      };
+      try { state.mediaRecorder.stop(); }
+      catch (e) {
+        console.warn('[AudioCapture] stop failed', e);
+        resolve(null);
+      }
+    });
+  }
+
+  async function transcribeAudioWithGemini(blob, mime, langName) {
+    if (!state.apiKey) {
+      throw new Error("No Gemini API key configured in Settings");
+    }
+    // base64 encode the audio
+    const arrayBuffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    const base64 = btoa(binary);
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${state.apiKey}`;
+    const prompt = `Transcribe this audio recording verbatim${langName ? ' (spoken language: ' + langName + ')' : ''}. Output only the raw transcript text, no commentary, no timestamps, no speaker labels unless they are obvious from explicit name introductions. Preserve proper nouns, brand names, and technical terms accurately. Do not summarize, do not paraphrase, do not skip filler words if they carry meaning.`;
+
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inlineData: { mimeType: mime, data: base64 } },
+            { text: prompt }
+          ]
+        }]
+      })
+    });
+
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err && err.error && err.error.message ? err.error.message : ('HTTP ' + r.status));
+    }
+    const data = await r.json();
+    const text = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text;
+    if (!text) throw new Error("Empty transcript returned from Gemini");
+    return String(text).trim();
+  }
+
+  async function transcribeAndApplyCapturedAudio(captured) {
+    if (!captured || !captured.blob || captured.blob.size < 1000) {
+      // Recording too short — skip Gemini, keep whatever Web Speech caught
+      return;
+    }
+    const sizeMB = (captured.blob.size / 1024 / 1024).toFixed(1);
+    const prevStatus = elements.recordingStatus.textContent;
+    elements.recordingStatus.textContent = `Transcribing with Gemini… (${sizeMB} MB)`;
+    showToast(`Audio captured (${sizeMB} MB). Generating high-quality transcript with Gemini…`, "info");
+    elements.micToggleBtn.disabled = true;
+    try {
+      const langName = elements.dictationLangSelect && elements.dictationLangSelect.options[elements.dictationLangSelect.selectedIndex] && elements.dictationLangSelect.options[elements.dictationLangSelect.selectedIndex].text;
+      const transcript = await transcribeAudioWithGemini(captured.blob, captured.mime, langName);
+      elements.transcriptInput.value = transcript;
+      state.recordedText = transcript;
+      elements.transcriptInput.scrollTop = elements.transcriptInput.scrollHeight;
+      elements.recordingStatus.textContent = "Microphone Idle";
+      showToast("High-quality transcript ready ✓", "success");
+    } catch (e) {
+      console.error("Gemini transcription failed", e);
+      elements.recordingStatus.textContent = prevStatus || "Microphone Idle";
+      showToast(`Gemini transcription failed: ${e.message}. Live preview kept.`, "error");
+    } finally {
+      elements.micToggleBtn.disabled = false;
+    }
+  }
+
   function initVoiceDictation() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     
@@ -1112,14 +1272,23 @@ Structure it with:
       }
     });
 
-    elements.micToggleBtn.addEventListener('click', () => {
+    elements.micToggleBtn.addEventListener('click', async () => {
       if (state.isRecording) {
         state.isRecording = false; // Flag to prevent auto-restart
         if (state.recognition) {
           state.recognition.stop();
         }
         stopRecording();
+        // Stop the high-quality buffer and hand it to Gemini for a real transcript
+        const captured = await stopParallelAudioBuffer();
+        await transcribeAndApplyCapturedAudio(captured);
       } else {
+        // Start the high-quality audio buffer in parallel with Web Speech.
+        // If audio capture fails we still let Web Speech run as the fallback.
+        const audioStarted = await startParallelAudioBuffer();
+        if (!audioStarted) {
+          showToast("High-quality audio capture unavailable; using browser ASR only.", "warning");
+        }
         startSpeechRecognition();
       }
     });
@@ -1131,6 +1300,17 @@ Structure it with:
       if (state.recognition) { try { state.recognition.stop(); } catch {} }
       stopRecording();
     }
+    // Drop any captured audio so we don't transcribe a stale recording
+    if (state.mediaRecorder) {
+      try { state.mediaRecorder.stop(); } catch {}
+      state.mediaRecorder = null;
+    }
+    if (state.micStream) {
+      state.micStream.getTracks().forEach((t) => t.stop());
+      state.micStream = null;
+    }
+    state.audioChunks = [];
+    state.audioChunksMime = '';
     state.recordedText = '';
     elements.meetingTitle.value = '';
     elements.transcriptInput.value = '';
