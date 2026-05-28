@@ -28,6 +28,10 @@ services:
       context: ./api
       dockerfile: Dockerfile
     restart: unless-stopped
+    environment:
+      # Comma-separated Caddy usernames granted admin (cross-user) visibility.
+      # 'local' is always admin for gateway-less local dev.
+      - ADMIN_USERS=admin
     volumes:
       # Persistent meeting storage. Survives container rebuilds and `down`.
       # Inspect with: docker run --rm -v minutes-ai_meetings_data:/data alpine ls /data

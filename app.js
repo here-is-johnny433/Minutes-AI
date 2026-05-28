@@ -2157,32 +2157,43 @@ Structure it with:
       renderUsersTable();
     });
 
-    // 5. Active Session Recovery Check
-    const activeSession = sessionStorage.getItem('minutae_current_user');
-    if (activeSession) {
-      try {
-        state.currentUser = JSON.parse(activeSession);
-        
-        // Restore meeting state
-        state.meetings = JSON.parse(localStorage.getItem('minutae_meetings_' + state.currentUser.username) || '[]');
-        
-        // Load UI Layout overrides
-        toggleAdminUIElements(state.currentUser.role);
-        elements.authOverlay.style.display = 'none';
+    // 5. Boot session from the gateway-verified identity (Caddy-only auth).
+    // The app no longer shows its own login screen — the reverse proxy's
+    // basic_auth is the single sign-on, and /api/whoami tells us who that is.
+    bootSession();
+  }
 
-        // Render grids and templates
-        refreshTemplateSelectors();
-        renderArchiveGrid();
-        switchView('dashboard');
-      } catch (err) {
-        console.error("Session restoration failed", err);
-        sessionStorage.removeItem('minutae_current_user');
-        elements.authOverlay.style.display = 'flex';
-      }
-    } else {
-      // Direct access guard - force auth cards
-      elements.authOverlay.style.display = 'flex';
+  async function bootSession() {
+    // Hide the obsolete login overlay up front so it never flashes while
+    // the whoami round-trip is in flight.
+    if (elements.authOverlay) elements.authOverlay.style.display = 'none';
+    // Ask the server who the gateway authenticated us as.
+    try {
+      const r = await fetch('/api/whoami', { cache: 'no-store' });
+      if (!r.ok) throw new Error('whoami ' + r.status);
+      const me = await r.json();
+      state.currentUser = { username: me.username, role: me.role };
+    } catch (e) {
+      console.warn('whoami failed; falling back to local admin identity', e);
+      state.currentUser = { username: 'local', role: 'admin' };
     }
+    sessionStorage.setItem('minutae_current_user', JSON.stringify(state.currentUser));
+
+    // The app login overlay is obsolete under Caddy-only auth — keep it hidden.
+    if (elements.authOverlay) elements.authOverlay.style.display = 'none';
+    toggleAdminUIElements(state.currentUser.role);
+
+    // Load meetings: cache first for instant paint, then authoritative server list
+    state.meetings = JSON.parse(localStorage.getItem('minutae_meetings_' + state.currentUser.username) || '[]');
+    const fromServer = await syncMeetingsFromServer();
+    if (fromServer) {
+      state.meetings = fromServer;
+      localStorage.setItem('minutae_meetings_' + state.currentUser.username, JSON.stringify(state.meetings));
+    }
+
+    refreshTemplateSelectors();
+    renderArchiveGrid();
+    switchView('dashboard');
   }
 
   // Seeding default administrator profile

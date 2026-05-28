@@ -67,9 +67,22 @@ function sanitizeUser(raw) {
   return s.length > 0 ? s : null;
 }
 
-function sanitizeRole(raw) {
-  const r = String(raw || '').toLowerCase().trim();
-  return r === 'admin' ? 'admin' : 'operator';
+// Admin usernames. In production these are the Caddy basic_auth users you
+// want to grant cross-user visibility. 'local' is always admin so local
+// dev (no gateway, no injected header) works without configuration.
+const ADMIN_USERS = (process.env.ADMIN_USERS || 'admin')
+  .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+  .concat('local');
+
+// Identity comes from the X-Minutes-User header, which in production is
+// injected by Caddy from the verified basic_auth login (the browser can't
+// spoof it). In local dev there's no gateway, so we fall back to a 'local'
+// admin identity. Role is always computed server-side from ADMIN_USERS —
+// never trusted from the client.
+function resolveIdentity(req) {
+  const u = sanitizeUser(req.get('X-Minutes-User'));
+  if (!u) return { username: 'local', role: 'admin', authed: false };
+  return { username: u, role: ADMIN_USERS.includes(u) ? 'admin' : 'operator', authed: true };
 }
 
 // Returns array of subdirectory names (each is one user's archive).
@@ -100,15 +113,17 @@ async function findFileById(userDir, id) {
 // Health probe (no user scope)
 app.get('/api/health', (_, res) => res.json({ ok: true, dataDir: DATA_DIR }));
 
-// User-scope middleware. Every /api/meetings request must carry
-// X-Minutes-User; X-Minutes-Role is optional and defaults to 'operator'.
-// Both are sanitized + path-traversal-safe.
+// Identity probe — the frontend calls this on boot to learn who it is
+// (from the Caddy-injected header) instead of showing its own login.
+app.get('/api/whoami', (req, res) => res.json(resolveIdentity(req)));
+
+// User-scope middleware. Identity + role are resolved server-side from the
+// (Caddy-verified) X-Minutes-User header — never trusted from client JS.
 app.use('/api/meetings', (req, res, next) => {
-  const u = sanitizeUser(req.get('X-Minutes-User'));
-  if (!u) return res.status(400).json({ error: 'missing or invalid X-Minutes-User header' });
-  req.scopedUser = u;
-  req.scopedRole = sanitizeRole(req.get('X-Minutes-Role'));
-  req.userDir = path.join(DATA_DIR, u);
+  const id = resolveIdentity(req);
+  req.scopedUser = id.username;
+  req.scopedRole = id.role;
+  req.userDir = path.join(DATA_DIR, id.username);
   next();
 });
 
