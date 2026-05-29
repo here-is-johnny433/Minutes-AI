@@ -110,6 +110,9 @@ Structure it with:
     navButtons: document.querySelectorAll('.nav-btn'),
     views: document.querySelectorAll('.content-view'),
     apiStatusBadge: document.getElementById('api-status-badge'),
+    mobileMenuBtn: document.getElementById('mobile-menu-btn'),
+    sidebarOverlay: document.getElementById('sidebar-overlay'),
+    sidebar: document.querySelector('.sidebar'),
     
     // Dashboard Workspace
     meetingTitle: document.getElementById('meeting-title'),
@@ -237,7 +240,11 @@ Structure it with:
 
     function switchInputMethod(method) {
       state.inputMethod = method;
-      
+
+      // Capture-source + language selectors are only relevant for live recording
+      const micControls = document.getElementById('mic-inline-controls');
+      if (micControls) micControls.style.display = method === 'microphone' ? 'flex' : 'none';
+
       if (method === 'text') {
         elements.textInputContainer.style.display = 'flex';
         elements.dictationBar.style.display = 'none';
@@ -699,7 +706,16 @@ Structure it with:
     elements.apiKeyToggleBtn.addEventListener('click', () => {
       const type = elements.apiKeyInput.type === 'password' ? 'text' : 'password';
       elements.apiKeyInput.type = type;
-      elements.apiKeyToggleBtn.querySelector('svg').style.color = type === 'text' ? 'var(--accent-cyan)' : 'var(--text-muted)';
+      const isVisible = type === 'text';
+      elements.apiKeyToggleBtn.innerHTML = isVisible 
+        ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mini-icon" style="color: var(--accent-cyan);">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+            <line x1="1" y1="1" x2="23" y2="23"/>
+          </svg>`
+        : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mini-icon" style="color: var(--text-muted);">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>`;
     });
 
     // Clear archive
@@ -1649,18 +1665,22 @@ Structure it with:
     elements.resultsDialog.close();
   });
 
-  // Close when clicking backdrop (light dismiss hack for large-dialog)
-  elements.resultsDialog.addEventListener('click', (e) => {
-    const dialogDimensions = elements.resultsDialog.getBoundingClientRect();
-    if (
-      e.clientX < dialogDimensions.left ||
-      e.clientX > dialogDimensions.right ||
-      e.clientY < dialogDimensions.top ||
-      e.clientY > dialogDimensions.bottom
-    ) {
-      elements.resultsDialog.close();
-    }
-  });
+  // Safe light-dismiss backdrop click fallback for browsers lacking closedBy support (like Safari)
+  if (!('closedBy' in HTMLDialogElement.prototype)) {
+    elements.resultsDialog.addEventListener('click', (event) => {
+      if (event.target !== elements.resultsDialog) return;
+      const rect = elements.resultsDialog.getBoundingClientRect();
+      const isDialogContent = (
+        rect.top <= event.clientY &&
+        event.clientY <= rect.top + rect.height &&
+        rect.left <= event.clientX &&
+        event.clientX <= rect.left + rect.width
+      );
+      if (!isDialogContent) {
+        elements.resultsDialog.close();
+      }
+    });
+  }
 
   // ==========================================
   // 9. ARCHIVE BROWSER (CRUD)
@@ -2114,6 +2134,27 @@ Structure it with:
     }
   }
 
+  function initMobileNavigation() {
+    if (!elements.mobileMenuBtn || !elements.sidebarOverlay || !elements.sidebar) return;
+
+    elements.mobileMenuBtn.addEventListener('click', () => {
+      elements.sidebar.classList.add('open');
+      elements.sidebarOverlay.classList.add('active');
+    });
+
+    const closeMobileSidebar = () => {
+      elements.sidebar.classList.remove('open');
+      elements.sidebarOverlay.classList.remove('active');
+    };
+
+    elements.sidebarOverlay.addEventListener('click', closeMobileSidebar);
+
+    // Also close the sidebar when clicking navigation buttons on mobile
+    elements.navButtons.forEach(btn => {
+      btn.addEventListener('click', closeMobileSidebar);
+    });
+  }
+
   // ==========================================
   // 11. STARTUP INITIALIZATION
   // ==========================================
@@ -2126,6 +2167,7 @@ Structure it with:
     initSettingsPanel();
     initVoiceDictation();
     initUserAuth();
+    initMobileNavigation();
   }
 
   init();
