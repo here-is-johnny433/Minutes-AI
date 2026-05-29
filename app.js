@@ -18,21 +18,16 @@ document.addEventListener('DOMContentLoaded', () => {
     textFile: { name: '', size: '' },
     audioLang: localStorage.getItem('minutae_audio_lang') || 'en-US',
     
-    // Voice dictation states
+    // Voice dictation / recording states
     isRecording: false,
-    recognition: null,
     recordingStartTime: 0,
     recordingTimerInterval: null,
-    // Parallel high-quality audio capture: MediaRecorder buffers the raw
-    // mic audio while Web Speech runs as a rough live preview. On stop we
-    // hand the buffered audio to Gemini for a real transcript.
+    // Mic audio capture (MediaRecorder) → transcribed by Gemini on stop.
     mediaRecorder: null,
     micStream: null,
     audioChunks: [],
     audioChunksMime: '',
     recordedText: '',
-    networkRetryCount: 0,
-    lastErrorType: null,
     
     // AI session properties
     localAISession: null,
@@ -260,7 +255,7 @@ Structure it with:
         // Stop active recording session if running
         if (state.isRecording) {
           state.isRecording = false;
-          if (state.recognition) state.recognition.stop();
+          abortMicCapture();
           stopRecording();
         }
       } else if (method === 'text-file') {
@@ -278,7 +273,7 @@ Structure it with:
         // Stop active recording session if running
         if (state.isRecording) {
           state.isRecording = false;
-          if (state.recognition) state.recognition.stop();
+          abortMicCapture();
           stopRecording();
         }
       }
@@ -940,164 +935,19 @@ Structure it with:
     }
   });
 
-  // ==========================================
-  // 6. LIVE VOICE TRANSCRIPTION (WEB SPEECH)
-  // ==========================================
-  
-  function startSpeechRecognition() {
-    // Gracefully clean up any existing instance to avoid duplicate listeners or events
-    if (state.recognition) {
-      try {
-        state.recognition.onstart = null;
-        state.recognition.onerror = null;
-        state.recognition.onend = null;
-        state.recognition.onresult = null;
-        state.recognition.stop();
-      } catch (err) {
-        console.warn("Cleanup of existing speech recognition instance failed:", err);
-      }
-      state.recognition = null;
-    }
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      showToast("Speech recognition is not supported in this browser", "error");
-      return;
-    }
-
-    // Always create a fresh instance to satisfy Chrome's single-use constraint
-    state.recognition = new SpeechRecognition();
-    state.recognition.continuous = true;
-    state.recognition.interimResults = true;
-    state.recognition.lang = state.dictationLang;
-
-    state.recognition.onstart = () => {
-      state.isRecording = true;
-      elements.dictationBar.classList.add('active');
-      elements.micToggleBtn.classList.add('active');
-      elements.recordingStatus.textContent = "Listening...";
-      
-      // Load current value and cleanly strip any lingering interim tags
-      state.recordedText = elements.transcriptInput.value.replace(/\s\.\.\.\[.*\]$/, '');
-      
-      // Reset network retry logic upon successful connection/start
-      state.networkRetryCount = 0;
-      state.lastErrorType = null;
-      
-      // Start clock if not already running
-      if (!state.recordingTimerInterval) {
-        state.recordingStartTime = Date.now();
-        elements.recordingTime.textContent = "00:00";
-        state.recordingTimerInterval = setInterval(updateRecordingClock, 1000);
-        showToast("Voice recording started", "info");
-      } else {
-        showToast("Microphone reconnected successfully", "success");
-      }
-    };
-
-    state.recognition.onerror = (e) => {
-      console.error("[SpeechRecognition] error:", e.error, e);
-      state.lastErrorType = e.error;
-
-      if (e.error === 'network') {
-        state.networkRetryCount++;
-        if (state.networkRetryCount <= 5) {
-          showToast(`Network disruption detected. Reconnecting microphone (Attempt ${state.networkRetryCount}/5)...`, "warning");
-          elements.recordingStatus.textContent = "Reconnecting...";
-        } else {
-          showToast("Speech recognition needs internet access to Google's servers. Connection failed.", "error");
-          stopRecording();
-        }
-      } else if (e.error === 'aborted') {
-        console.warn("Speech Recognition aborted internally. Attempting auto-restart...");
-      } else if (e.error === 'no-speech') {
-        // Surface silently-swallowed silence so the user understands why nothing appears
-        elements.recordingStatus.textContent = "Listening… (no audio detected)";
-      } else if (e.error === 'audio-capture') {
-        showToast("No microphone available — check your input device and OS permissions.", "error");
-        stopRecording();
-      } else if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        showToast("Microphone permission blocked for this site. Allow it in the browser address bar.", "error");
-        stopRecording();
-      } else {
-        showToast("Microphone error: " + e.error, "error");
-        stopRecording();
-      }
-    };
-
-    state.recognition.onend = () => {
-      // Auto restart if the state is still recording (SpeechRecognition cuts off on long pauses or network disruptions)
-      if (state.isRecording) {
-        if (state.lastErrorType === 'network') {
-          // Add a 2-second delay to avoid rapid failing reconnect loop
-          elements.recordingStatus.textContent = "Reconnecting in 2s...";
-          setTimeout(() => {
-            if (state.isRecording) {
-              startSpeechRecognition();
-            }
-          }, 2000);
-        } else {
-          // Standard immediate restart with a micro-delay to prevent InvalidStateError
-          elements.recordingStatus.textContent = "Reconnecting...";
-          setTimeout(() => {
-            if (state.isRecording) {
-              startSpeechRecognition();
-            }
-          }, 50);
-        }
-      } else {
-        stopRecording();
-      }
-    };
-
-    state.recognition.onresult = (e) => {
-      let interimTranscript = '';
-      let finalTranscript = '';
-
-      for (let i = e.resultIndex; i < e.results.length; ++i) {
-        if (e.results[i].isFinal) {
-          finalTranscript += e.results[i][0].transcript;
-        } else {
-          interimTranscript += e.results[i][0].transcript;
-        }
-      }
-
-      console.log("[SpeechRecognition] result — final:", JSON.stringify(finalTranscript), "interim:", JSON.stringify(interimTranscript));
-
-      if (finalTranscript) {
-        state.recordedText += (state.recordedText ? ' ' : '') + finalTranscript;
-      }
-
-      // Restore "Listening…" if a previous no-speech event downgraded the status
-      if (elements.recordingStatus.textContent !== "Listening...") {
-        elements.recordingStatus.textContent = "Listening...";
-      }
-
-      // Stream directly to UI text-area
-      elements.transcriptInput.value = state.recordedText + (interimTranscript ? ' ...[' + interimTranscript + ']' : '');
-      elements.transcriptInput.scrollTop = elements.transcriptInput.scrollHeight;
-    };
-
-    try {
-      state.recognition.start();
-    } catch (err) {
-      console.error("Speech start error", err);
-      showToast("Failed to access microphone", "error");
-      stopRecording();
-    }
-  }
 
   // ==========================================
-  // HIGH-QUALITY AUDIO BUFFER (Gemini ASR)
+  // MICROPHONE CAPTURE → GEMINI TRANSCRIPTION
   // ==========================================
-  // Web Speech runs as a rough live preview; in parallel we buffer the
-  // actual microphone audio and, on stop, send it to Gemini 2.5 Flash
-  // multimodal for a real transcript that overwrites the textarea.
+  // Mic mode records audio with MediaRecorder (single mic consumer, no
+  // Web Speech contention) and, on stop, sends the full recording to
+  // Gemini 2.5 Flash multimodal for a high-quality transcript. There is
+  // no lossy live preview — the transcript appears once, after stop.
 
   function pickAudioMimeType() {
     if (typeof MediaRecorder === 'undefined') return '';
-    // Prefer formats Gemini supports natively. Chrome will likely fall
-    // through to audio/webm; Gemini accepts that empirically too.
+    // Prefer formats Gemini supports natively. Chrome typically lands on
+    // audio/webm;codecs=opus, which Gemini accepts.
     const candidates = [
       'audio/ogg;codecs=opus',
       'audio/mp4;codecs=mp4a.40.2',
@@ -1111,42 +961,79 @@ Structure it with:
     return '';
   }
 
-  async function startParallelAudioBuffer() {
-    if (!navigator.mediaDevices || typeof MediaRecorder === 'undefined') return false;
-    try {
-      state.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (e) {
-      console.warn('[AudioCapture] getUserMedia failed', e);
-      return false;
+  // Starts mic capture. THROWS with a human-readable message on failure so
+  // the caller can surface exactly why (no silent fallbacks).
+  async function startMicCapture() {
+    if (!window.isSecureContext) {
+      throw new Error("Microphone needs HTTPS (or localhost). This page isn't a secure context.");
     }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("This browser doesn't expose microphone access (navigator.mediaDevices).");
+    }
+    if (typeof MediaRecorder === 'undefined') {
+      throw new Error("This browser doesn't support MediaRecorder.");
+    }
+    try {
+      state.micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1
+        }
+      });
+    } catch (e) {
+      const name = e && e.name;
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        throw new Error("Microphone permission denied. Allow it via the address-bar icon, then retry.");
+      }
+      if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        throw new Error("No microphone found. Check your input device.");
+      }
+      if (name === 'NotReadableError') {
+        throw new Error("Microphone is in use by another app. Close it and retry.");
+      }
+      throw new Error("Could not access microphone: " + (e && e.message ? e.message : name));
+    }
+
     state.audioChunks = [];
     state.audioChunksMime = pickAudioMimeType();
     const opts = state.audioChunksMime ? { mimeType: state.audioChunksMime } : {};
     try {
       state.mediaRecorder = new MediaRecorder(state.micStream, opts);
     } catch (e) {
-      // Browser rejected our preferred MIME; let it pick its own
       try {
         state.mediaRecorder = new MediaRecorder(state.micStream);
-        state.audioChunksMime = state.mediaRecorder.mimeType || '';
       } catch (e2) {
-        console.warn('[AudioCapture] MediaRecorder construct failed', e2);
         state.micStream.getTracks().forEach((t) => t.stop());
         state.micStream = null;
-        return false;
+        throw new Error("MediaRecorder could not start: " + (e2 && e2.message ? e2.message : e2));
       }
     }
     state.audioChunksMime = state.audioChunksMime || state.mediaRecorder.mimeType || 'audio/webm';
     state.mediaRecorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) state.audioChunks.push(e.data);
     };
-    state.mediaRecorder.start(2000); // flush a chunk every 2s
-    return true;
+    state.mediaRecorder.start(2000); // flush a chunk every 2s (crash resilience)
   }
 
-  async function stopParallelAudioBuffer() {
+  // Hard teardown — abandon any in-flight recording without transcribing.
+  // Used when switching input methods or resetting the workspace.
+  function abortMicCapture() {
+    if (state.mediaRecorder) {
+      try { state.mediaRecorder.onstop = null; state.mediaRecorder.stop(); } catch {}
+      state.mediaRecorder = null;
+    }
+    if (state.micStream) {
+      state.micStream.getTracks().forEach((t) => t.stop());
+      state.micStream = null;
+    }
+    state.audioChunks = [];
+    state.audioChunksMime = '';
+  }
+
+  async function stopMicCapture() {
     if (!state.mediaRecorder) {
-      // Stream might still be open if MediaRecorder failed to start
       if (state.micStream) {
         state.micStream.getTracks().forEach((t) => t.stop());
         state.micStream = null;
@@ -1214,82 +1101,93 @@ Structure it with:
   }
 
   async function transcribeAndApplyCapturedAudio(captured) {
-    if (!captured || !captured.blob || captured.blob.size < 1000) {
-      // Recording too short — skip Gemini, keep whatever Web Speech caught
+    if (!captured || !captured.blob) {
+      elements.recordingStatus.textContent = "Microphone Idle";
+      showToast("No audio was captured. Nothing to transcribe.", "error");
+      return;
+    }
+    if (captured.blob.size < 1000) {
+      elements.recordingStatus.textContent = "Microphone Idle";
+      showToast("Recording too short to transcribe. Try again and speak for a few seconds.", "warning");
+      return;
+    }
+    if (!state.apiKey) {
+      elements.recordingStatus.textContent = "Microphone Idle";
+      showToast("No Gemini API key set. Add one in Settings to transcribe recordings.", "error");
       return;
     }
     const sizeMB = (captured.blob.size / 1024 / 1024).toFixed(1);
-    const prevStatus = elements.recordingStatus.textContent;
     elements.recordingStatus.textContent = `Transcribing with Gemini… (${sizeMB} MB)`;
-    showToast(`Audio captured (${sizeMB} MB). Generating high-quality transcript with Gemini…`, "info");
+    showToast(`Audio captured (${sizeMB} MB). Generating transcript with Gemini…`, "info");
     elements.micToggleBtn.disabled = true;
     try {
       const langName = elements.dictationLangSelect && elements.dictationLangSelect.options[elements.dictationLangSelect.selectedIndex] && elements.dictationLangSelect.options[elements.dictationLangSelect.selectedIndex].text;
       const transcript = await transcribeAudioWithGemini(captured.blob, captured.mime, langName);
-      elements.transcriptInput.value = transcript;
-      state.recordedText = transcript;
+      // Append to any text already in the box rather than clobbering it
+      const existing = elements.transcriptInput.value.trim();
+      elements.transcriptInput.value = existing ? (existing + '\n\n' + transcript) : transcript;
+      state.recordedText = elements.transcriptInput.value;
       elements.transcriptInput.scrollTop = elements.transcriptInput.scrollHeight;
       elements.recordingStatus.textContent = "Microphone Idle";
-      showToast("High-quality transcript ready ✓", "success");
+      showToast("Transcript ready ✓", "success");
     } catch (e) {
       console.error("Gemini transcription failed", e);
-      elements.recordingStatus.textContent = prevStatus || "Microphone Idle";
-      showToast(`Gemini transcription failed: ${e.message}. Live preview kept.`, "error");
+      elements.recordingStatus.textContent = "Microphone Idle";
+      showToast(`Transcription failed: ${e.message}`, "error");
     } finally {
       elements.micToggleBtn.disabled = false;
     }
   }
 
   function initVoiceDictation() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
-    if (!SpeechRecognition) {
-      elements.recordingStatus.textContent = "Voice Dictation Unsupported";
+    const micSupported = typeof MediaRecorder !== 'undefined' &&
+      navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+
+    if (!micSupported) {
+      elements.recordingStatus.textContent = "Recording Unsupported";
       elements.micToggleBtn.disabled = true;
       elements.micToggleBtn.style.cursor = 'not-allowed';
-      elements.micToggleBtn.title = "Your browser does not support the Web Speech API.";
+      elements.micToggleBtn.title = "This browser can't record audio (no MediaRecorder/getUserMedia).";
       return;
     }
 
     // Set initial dropdown value
     elements.dictationLangSelect.value = state.dictationLang;
 
-    // Listen for language dropdown changes
+    // Language is only a hint passed to Gemini at transcription time; changing
+    // it mid-recording is harmless and needs no restart.
     elements.dictationLangSelect.addEventListener('change', (e) => {
-      const selectedLang = e.target.value;
-      state.dictationLang = selectedLang;
-      localStorage.setItem('minutae_dictation_lang', selectedLang);
-      
+      state.dictationLang = e.target.value;
+      localStorage.setItem('minutae_dictation_lang', state.dictationLang);
       const langName = elements.dictationLangSelect.options[elements.dictationLangSelect.selectedIndex].text;
-      showToast(`Language set to: ${langName}`, "info");
-
-      // If actively recording, restart it to apply the new language immediately!
-      if (state.isRecording) {
-        showToast("Restarting microphone to apply new language...", "info");
-        if (state.recognition) {
-          state.recognition.stop();
-        }
-      }
+      showToast(`Transcription language: ${langName}`, "info");
     });
 
     elements.micToggleBtn.addEventListener('click', async () => {
       if (state.isRecording) {
-        state.isRecording = false; // Flag to prevent auto-restart
-        if (state.recognition) {
-          state.recognition.stop();
-        }
+        // STOP → transcribe
+        state.isRecording = false;
         stopRecording();
-        // Stop the high-quality buffer and hand it to Gemini for a real transcript
-        const captured = await stopParallelAudioBuffer();
+        const captured = await stopMicCapture();
         await transcribeAndApplyCapturedAudio(captured);
       } else {
-        // Start the high-quality audio buffer in parallel with Web Speech.
-        // If audio capture fails we still let Web Speech run as the fallback.
-        const audioStarted = await startParallelAudioBuffer();
-        if (!audioStarted) {
-          showToast("High-quality audio capture unavailable; using browser ASR only.", "warning");
+        // START
+        try {
+          await startMicCapture();
+        } catch (e) {
+          console.error("Mic capture failed to start", e);
+          showToast(e.message || "Could not start recording.", "error");
+          return;
         }
-        startSpeechRecognition();
+        state.isRecording = true;
+        elements.dictationBar.classList.add('active');
+        elements.micToggleBtn.classList.add('active');
+        elements.recordingStatus.textContent = "Recording…";
+        state.recordingStartTime = Date.now();
+        elements.recordingTime.textContent = "00:00";
+        if (state.recordingTimerInterval) clearInterval(state.recordingTimerInterval);
+        state.recordingTimerInterval = setInterval(updateRecordingClock, 1000);
+        showToast("Recording started — transcript appears when you stop.", "info");
       }
     });
   }
@@ -1297,20 +1195,10 @@ Structure it with:
   function resetWorkspaceForNextMeeting() {
     if (state.isRecording) {
       state.isRecording = false;
-      if (state.recognition) { try { state.recognition.stop(); } catch {} }
       stopRecording();
     }
     // Drop any captured audio so we don't transcribe a stale recording
-    if (state.mediaRecorder) {
-      try { state.mediaRecorder.stop(); } catch {}
-      state.mediaRecorder = null;
-    }
-    if (state.micStream) {
-      state.micStream.getTracks().forEach((t) => t.stop());
-      state.micStream = null;
-    }
-    state.audioChunks = [];
-    state.audioChunksMime = '';
+    abortMicCapture();
     state.recordedText = '';
     elements.meetingTitle.value = '';
     elements.transcriptInput.value = '';
@@ -1324,18 +1212,11 @@ Structure it with:
     elements.dictationBar.classList.remove('active');
     elements.micToggleBtn.classList.remove('active');
     elements.recordingStatus.textContent = "Microphone Idle";
-    
+
     if (state.recordingTimerInterval) {
       clearInterval(state.recordingTimerInterval);
       state.recordingTimerInterval = null;
     }
-    
-    // Strip interim tags if any left
-    elements.transcriptInput.value = elements.transcriptInput.value.replace(/\s\.\.\.\[.*\]$/, '');
-    
-    // Reset network retry count & last error
-    state.networkRetryCount = 0;
-    state.lastErrorType = null;
   }
 
   function updateRecordingClock() {
