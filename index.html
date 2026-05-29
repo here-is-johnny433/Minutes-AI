@@ -180,47 +180,41 @@
 
               <!-- Voice Dictation Dashboard Inside Panel -->
               <div class="dictation-bar glass-inner-panel" style="display: none;">
-                <div class="recorder-info">
-                  <button id="mic-toggle-btn" class="mic-btn pulse-mic-btn" aria-label="Start audio recording">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mic-icon">
-                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                    </svg>
-                  </button>
-                  <div class="mic-status-text">
-                    <span id="recording-status">Microphone Idle</span>
-                    <span id="recording-time" class="recording-time">00:00</span>
-                  </div>
-                  
-                  <!-- Capture Source Selector -->
-                  <div class="dictation-lang-selector">
-                    <select id="capture-source-select" class="glass-select-mini" aria-label="Audio Capture Source" title="Where to capture audio from">
-                      <option value="mic">🎙️ Microphone</option>
-                      <option value="tab">🖥️ Tab / System Audio</option>
-                    </select>
-                  </div>
-
-                  <!-- Dictation Language Selector -->
-                  <div class="dictation-lang-selector">
-                    <select id="dictation-lang-select" class="glass-select-mini" aria-label="Transcription Language">
-                      <option value="en-US">🇺🇸 English</option>
-                      <option value="es-ES">🇪🇸 Español (España)</option>
-                      <option value="es-MX">🇲🇽 Español (México)</option>
-                      <option value="de-DE">🇩🇪 Deutsch</option>
-                      <option value="fr-FR">🇫🇷 Français</option>
-                      <option value="it-IT">🇮🇹 Italiano</option>
-                      <option value="pt-BR">🇧🇷 Português</option>
-                      <option value="ja-JP">🇯🇵 日本語</option>
-                      <option value="zh-CN">🇨🇳 中文</option>
-                    </select>
-                  </div>
+                <button id="mic-toggle-btn" class="mic-btn pulse-mic-btn" aria-label="Start audio recording">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mic-icon">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                  </svg>
+                </button>
+                <div class="mic-status-text">
+                  <span id="recording-status">Microphone Idle</span>
+                  <span id="recording-time" class="recording-time">00:00</span>
                 </div>
+
                 <div class="dictation-visualizer">
                   <div class="bar bar-1"></div>
                   <div class="bar bar-2"></div>
                   <div class="bar bar-3"></div>
                   <div class="bar bar-4"></div>
                   <div class="bar bar-5"></div>
+                </div>
+
+                <div class="dictation-controls">
+                  <select id="capture-source-select" class="glass-select-mini" aria-label="Audio Capture Source" title="Where to capture audio from">
+                    <option value="mic">🎙️ Microphone</option>
+                    <option value="tab">🖥️ Tab / System Audio</option>
+                  </select>
+                  <select id="dictation-lang-select" class="glass-select-mini" aria-label="Transcription Language">
+                    <option value="en-US">🇺🇸 English</option>
+                    <option value="es-ES">🇪🇸 Español (España)</option>
+                    <option value="es-MX">🇲🇽 Español (México)</option>
+                    <option value="de-DE">🇩🇪 Deutsch</option>
+                    <option value="fr-FR">🇫🇷 Français</option>
+                    <option value="it-IT">🇮🇹 Italiano</option>
+                    <option value="pt-BR">🇧🇷 Português</option>
+                    <option value="ja-JP">🇯🇵 日本語</option>
+                    <option value="zh-CN">🇨🇳 中文</option>
+                  </select>
                 </div>
               </div>
 
