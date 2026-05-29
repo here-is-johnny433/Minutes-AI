@@ -53,14 +53,14 @@ Then open **http://localhost:8080**. You'll lose the nginx config's gzip and SPA
 
 ## 🔐 First login
 
-The app seeds a default administrator account on first boot. Use:
+The API seeds a default administrator account on first boot. Use:
 
 - **Username:** `admin`
 - **Password:** `admin123`
 
-Change it from the **Users** view, or add additional accounts there. Credentials live in your browser's `localStorage` — they never leave your machine.
+Log in, then **change the password immediately** from the **Users** view, and add accounts for your team there. Each user gets their own private archive; admins see everyone's.
 
-If you ever get locked out, clear site data for the origin (Chrome → Site settings → Delete data) to re-seed the default admin.
+Authentication is server-enforced: passwords are scrypt-hashed in the API's data volume (`users.json`) and login issues an HttpOnly session cookie. If you lose the admin password, delete `users.json` from the `meetings_data` volume to re-seed `admin` / `admin123`.
 
 ---
 

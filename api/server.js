@@ -1,27 +1,29 @@
-// Minutes.AI per-user storage backend.
+// Minutes.AI storage + auth backend.
 //
 // Files are stored as `<DATA_DIR>/<sanitized-username>/<rawDate>-<slug>.md`
-// with the same HTML-comment-frontmatter format the frontend already
-// produces, so a human can `cat` them or open them in any markdown viewer.
+// with an HTML-comment frontmatter, so each is readable in any markdown viewer.
 //
-// No real auth here — Caddy's basic_auth is the actual boundary at the
-// edge. The X-Minutes-User header that scopes per-user files is trusted
-// best-effort organizational metadata. Anyone past Caddy who knows the
-// API contract could spoof another username via DevTools. Don't treat the
-// per-user separation as a security guarantee — it's a file-organization
-// convenience for "small team that trusts each other but wants their own
-// archive views."
+// Auth is real and server-enforced: users live in DATA_DIR/users.json with
+// scrypt-hashed passwords; login issues an HMAC-signed, HttpOnly session
+// cookie; every /api/meetings and /api/users request is validated against
+// that cookie and the role comes from the stored user record (never the
+// client). Per-user archive isolation is therefore a genuine guarantee.
 
 const express = require('express');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const DATA_DIR = process.env.DATA_DIR || '/data';
+const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+const COOKIE_NAME = 'minutes_session';
 
 app.use(express.json({ limit: '25mb' })); // long transcripts can get big
 app.disable('x-powered-by');
+app.set('trust proxy', true);
 
 function slug(s) {
   return String(s || 'untitled')
@@ -67,22 +69,160 @@ function sanitizeUser(raw) {
   return s.length > 0 ? s : null;
 }
 
-// Admin usernames. In production these are the Caddy basic_auth users you
-// want to grant cross-user visibility. 'local' is always admin so local
-// dev (no gateway, no injected header) works without configuration.
-const ADMIN_USERS = (process.env.ADMIN_USERS || 'admin')
-  .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
-  .concat('local');
+// ==========================================================================
+// AUTH: server-side users, scrypt password hashing, signed session cookies
+// ==========================================================================
 
-// Identity comes from the X-Minutes-User header, which in production is
-// injected by Caddy from the verified basic_auth login (the browser can't
-// spoof it). In local dev there's no gateway, so we fall back to a 'local'
-// admin identity. Role is always computed server-side from ADMIN_USERS —
-// never trusted from the client.
-function resolveIdentity(req) {
-  const u = sanitizeUser(req.get('X-Minutes-User'));
-  if (!u) return { username: 'local', role: 'admin', authed: false };
-  return { username: u, role: ADMIN_USERS.includes(u) ? 'admin' : 'operator', authed: true };
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const SECRET_FILE = path.join(DATA_DIR, '.session_secret');
+
+// Session-signing secret: from env, else generated once and persisted so
+// sessions survive container restarts.
+function getSessionSecret() {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  try {
+    return fsSync.readFileSync(SECRET_FILE, 'utf8').trim();
+  } catch {
+    const s = crypto.randomBytes(48).toString('hex');
+    try { fsSync.mkdirSync(DATA_DIR, { recursive: true }); fsSync.writeFileSync(SECRET_FILE, s, { mode: 0o600 }); }
+    catch (e) { console.warn('Could not persist session secret', e.message); }
+    return s;
+  }
+}
+const SESSION_SECRET = getSessionSecret();
+
+function hashPassword(pw) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(String(pw), salt, 64).toString('hex');
+  return `scrypt$${salt}$${hash}`;
+}
+
+function verifyPassword(pw, stored) {
+  if (typeof stored !== 'string' || !stored.startsWith('scrypt$')) return false;
+  const [, salt, expected] = stored.split('$');
+  if (!salt || !expected) return false;
+  const actual = crypto.scryptSync(String(pw), salt, 64).toString('hex');
+  const a = Buffer.from(actual, 'hex');
+  const b = Buffer.from(expected, 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function b64url(buf) {
+  return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64urlDecode(s) {
+  return Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString();
+}
+
+// Stateless signed session token: base64url(payload).base64url(hmac)
+function signSession(payload) {
+  const body = b64url(JSON.stringify(payload));
+  const sig = b64url(crypto.createHmac('sha256', SESSION_SECRET).update(body).digest());
+  return `${body}.${sig}`;
+}
+
+function verifySessionToken(token) {
+  if (!token || typeof token !== 'string' || token.indexOf('.') < 0) return null;
+  const [body, sig] = token.split('.');
+  const expected = b64url(crypto.createHmac('sha256', SESSION_SECRET).update(body).digest());
+  const a = Buffer.from(sig); const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  let payload;
+  try { payload = JSON.parse(b64urlDecode(body)); } catch { return null; }
+  if (!payload || !payload.exp || Date.now() > payload.exp) return null;
+  return payload;
+}
+
+function parseCookies(req) {
+  const out = {};
+  const raw = req.headers.cookie;
+  if (!raw) return out;
+  raw.split(';').forEach((pair) => {
+    const i = pair.indexOf('=');
+    if (i < 0) return;
+    out[pair.slice(0, i).trim()] = decodeURIComponent(pair.slice(i + 1).trim());
+  });
+  return out;
+}
+
+function reqIsHttps(req) {
+  const xfp = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  return xfp === 'https' || req.secure;
+}
+
+function setSessionCookie(req, res, payload) {
+  const token = signSession(payload);
+  const parts = [
+    `${COOKIE_NAME}=${token}`,
+    'HttpOnly',
+    'Path=/',
+    'SameSite=Lax',
+    `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`
+  ];
+  if (reqIsHttps(req)) parts.push('Secure');
+  res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+function clearSessionCookie(res) {
+  res.setHeader('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`);
+}
+
+// ---- User store (DATA_DIR/users.json) ----
+async function loadUsers() {
+  try {
+    const txt = await fs.readFile(USERS_FILE, 'utf8');
+    const arr = JSON.parse(txt);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+async function saveUsers(users) {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.writeFile(USERS_FILE, JSON.stringify(users, null, 2));
+}
+async function seedAdmin() {
+  const users = await loadUsers();
+  if (users.length === 0) {
+    users.push({
+      username: 'admin',
+      role: 'admin',
+      passwordHash: hashPassword('admin123'),
+      createdAt: new Date().toISOString().slice(0, 10)
+    });
+    await saveUsers(users);
+    console.log('[minutes-ai-api] seeded default admin (admin/admin123) — change the password!');
+  }
+}
+
+// Resolve the logged-in identity from the session cookie. Returns null if
+// unauthenticated. Role comes from the stored user record, never the client.
+async function resolveSession(req) {
+  const token = parseCookies(req)[COOKIE_NAME];
+  const payload = verifySessionToken(token);
+  if (!payload || !payload.u) return null;
+  const users = await loadUsers();
+  const user = users.find((x) => x.username === payload.u);
+  if (!user) return null; // user deleted since login
+  return { username: user.username, role: user.role };
+}
+
+// Middleware: require a valid session for everything it guards.
+async function requireAuth(req, res, next) {
+  try {
+    const me = await resolveSession(req);
+    if (!me) return res.status(401).json({ error: 'authentication required' });
+    req.user = me;
+    next();
+  } catch (e) {
+    console.error('auth check failed', e);
+    res.status(500).json({ error: 'auth error' });
+  }
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'admin privileges required' });
+  }
+  next();
 }
 
 // Returns array of subdirectory names (each is one user's archive).
@@ -110,20 +250,103 @@ async function findFileById(userDir, id) {
   return null;
 }
 
-// Health probe (no user scope)
+// Health probe (no auth)
 app.get('/api/health', (_, res) => res.json({ ok: true, dataDir: DATA_DIR }));
 
-// Identity probe — the frontend calls this on boot to learn who it is
-// (from the Caddy-injected header) instead of showing its own login.
-app.get('/api/whoami', (req, res) => res.json(resolveIdentity(req)));
+// ---- Auth endpoints ----
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const username = sanitizeUser(req.body && req.body.username);
+    const password = req.body && req.body.password;
+    if (!username || !password) return res.status(400).json({ error: 'username and password required' });
+    const users = await loadUsers();
+    const user = users.find((u) => u.username === username);
+    if (!user || !verifyPassword(password, user.passwordHash)) {
+      return res.status(401).json({ error: 'invalid username or password' });
+    }
+    setSessionCookie(req, res, { u: user.username, exp: Date.now() + SESSION_TTL_MS });
+    res.json({ username: user.username, role: user.role });
+  } catch (e) {
+    console.error('login failed', e);
+    res.status(500).json({ error: 'login error' });
+  }
+});
 
-// User-scope middleware. Identity + role are resolved server-side from the
-// (Caddy-verified) X-Minutes-User header — never trusted from client JS.
-app.use('/api/meetings', (req, res, next) => {
-  const id = resolveIdentity(req);
-  req.scopedUser = id.username;
-  req.scopedRole = id.role;
-  req.userDir = path.join(DATA_DIR, id.username);
+app.post('/api/auth/logout', (req, res) => {
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+// Who am I — frontend calls this on boot. 200 + identity if logged in, 401 if not.
+app.get('/api/auth/me', async (req, res) => {
+  const me = await resolveSession(req);
+  if (!me) return res.status(401).json({ error: 'not authenticated' });
+  res.json(me);
+});
+
+// ---- User management (admin only, except self password change) ----
+app.get('/api/users', requireAuth, requireAdmin, async (_, res) => {
+  const users = await loadUsers();
+  res.json(users.map((u) => ({ username: u.username, role: u.role, createdAt: u.createdAt })));
+});
+
+app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
+  const username = sanitizeUser(req.body && req.body.username);
+  const password = req.body && req.body.password;
+  const role = (req.body && req.body.role) === 'admin' ? 'admin' : 'operator';
+  if (!username) return res.status(400).json({ error: 'invalid username (use letters, numbers, _ or -)' });
+  if (!password || String(password).length < 4) return res.status(400).json({ error: 'password must be at least 4 characters' });
+  const users = await loadUsers();
+  if (users.some((u) => u.username === username)) return res.status(409).json({ error: 'username already exists' });
+  users.push({ username, role, passwordHash: hashPassword(password), createdAt: new Date().toISOString().slice(0, 10) });
+  await saveUsers(users);
+  res.json({ ok: true });
+});
+
+app.delete('/api/users/:username', requireAuth, requireAdmin, async (req, res) => {
+  const target = sanitizeUser(req.params.username);
+  if (target === req.user.username) return res.status(400).json({ error: "you can't delete your own account" });
+  const users = await loadUsers();
+  const next = users.filter((u) => u.username !== target);
+  if (next.length === users.length) return res.status(404).json({ error: 'user not found' });
+  await saveUsers(next);
+  res.json({ ok: true });
+});
+
+app.post('/api/users/:username/password', requireAuth, async (req, res) => {
+  const target = sanitizeUser(req.params.username);
+  const password = req.body && req.body.password;
+  // admins can reset anyone; non-admins only themselves
+  if (req.user.role !== 'admin' && req.user.username !== target) {
+    return res.status(403).json({ error: 'not allowed' });
+  }
+  if (!password || String(password).length < 4) return res.status(400).json({ error: 'password must be at least 4 characters' });
+  const users = await loadUsers();
+  const user = users.find((u) => u.username === target);
+  if (!user) return res.status(404).json({ error: 'user not found' });
+  user.passwordHash = hashPassword(password);
+  await saveUsers(users);
+  res.json({ ok: true });
+});
+
+app.post('/api/users/:username/role', requireAuth, requireAdmin, async (req, res) => {
+  const target = sanitizeUser(req.params.username);
+  const role = (req.body && req.body.role) === 'admin' ? 'admin' : 'operator';
+  if (target === req.user.username) return res.status(400).json({ error: "you can't change your own role" });
+  const users = await loadUsers();
+  const user = users.find((u) => u.username === target);
+  if (!user) return res.status(404).json({ error: 'user not found' });
+  user.role = role;
+  await saveUsers(users);
+  res.json({ ok: true });
+});
+
+// Meetings scope middleware — identity now comes from the validated session
+// cookie. No valid session → 401. Role from the stored user record.
+app.use('/api/meetings', requireAuth, (req, res, next) => {
+  req.scopedUser = req.user.username;
+  req.scopedRole = req.user.role;
+  req.userDir = path.join(DATA_DIR, req.user.username);
   next();
 });
 
@@ -269,6 +492,8 @@ app.delete('/api/meetings', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`[minutes-ai-api] listening on :${PORT}, data in ${DATA_DIR}`);
+seedAdmin().catch((e) => console.error('seedAdmin failed', e)).finally(() => {
+  app.listen(PORT, () => {
+    console.log(`[minutes-ai-api] listening on :${PORT}, data in ${DATA_DIR}`);
+  });
 });

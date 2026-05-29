@@ -11,10 +11,11 @@ services:
       # Mount the custom nginx configuration file read-only
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
-    # No host port mapping. In production, a Caddy reverse proxy on the
+    # No host port mapping. In production a Caddy reverse proxy on the
     # `web-net` docker network reaches this container by name and terminates
-    # TLS + auth. For local dev, copy docker-compose.override.example.yml to
-    # docker-compose.override.yml to re-expose port 8081 on the host.
+    # TLS. Auth is handled by the app itself (session cookies via the api
+    # service) — no basic_auth gate. For local dev, copy
+    # docker-compose.override.example.yml to docker-compose.override.yml.
     networks:
       - default
       - web-net
@@ -28,10 +29,11 @@ services:
       context: ./api
       dockerfile: Dockerfile
     restart: unless-stopped
-    environment:
-      # Comma-separated Caddy usernames granted admin (cross-user) visibility.
-      # 'local' is always admin for gateway-less local dev.
-      - ADMIN_USERS=admin
+    # Optional: set SESSION_SECRET to a long random string to pin the
+    # session-signing key across redeploys. If unset, the api generates and
+    # persists one in the data volume (.session_secret) automatically.
+    # environment:
+    #   - SESSION_SECRET=change-me-to-a-long-random-string
     volumes:
       # Persistent meeting storage. Survives container rebuilds and `down`.
       # Inspect with: docker run --rm -v minutes-ai_meetings_data:/data alpine ls /data

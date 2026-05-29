@@ -1801,72 +1801,15 @@ Structure it with:
   }
 
   // ==========================================
-  // 10.3. PASSWORD HASHING (SHA-256 + per-user random salt)
+  // 10.4. SERVER-SIDE MEETING STORAGE (per-user, cookie-authenticated)
   // ==========================================
-  // Stored format: "sha256$<saltHex>$<hashHex>"
-  // Legacy plaintext entries (no `sha256$` prefix) are accepted on login
-  // for backward compatibility, then transparently upgraded to a hash.
-
-  function pwBytesToHex(bytes) {
-    return Array.from(new Uint8Array(bytes)).map((b) => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  function pwGenerateSalt() {
-    const buf = new Uint8Array(16);
-    crypto.getRandomValues(buf);
-    return pwBytesToHex(buf);
-  }
-
-  async function pwComputeHash(password, saltHex) {
-    const data = new TextEncoder().encode(saltHex + ':' + password);
-    const digest = await crypto.subtle.digest('SHA-256', data);
-    return pwBytesToHex(digest);
-  }
-
-  async function pwHash(password) {
-    const salt = pwGenerateSalt();
-    const hash = await pwComputeHash(password, salt);
-    return `sha256$${salt}$${hash}`;
-  }
-
-  async function pwVerify(password, stored) {
-    if (typeof stored !== 'string') return { ok: false, legacy: false };
-    if (stored.startsWith('sha256$')) {
-      const [, salt, expected] = stored.split('$');
-      if (!salt || !expected) return { ok: false, legacy: false };
-      const actual = await pwComputeHash(password, salt);
-      return { ok: actual === expected, legacy: false };
-    }
-    // Legacy: stored value is the plaintext password
-    return { ok: stored === password, legacy: true };
-  }
-
-  // ==========================================
-  // 10.4. SERVER-SIDE MEETING STORAGE (shared pool via /api)
-  // ==========================================
-  // Meetings live as .md files in the api container's docker volume. All
-  // in-app users share the same pool — the access boundary is Caddy's
-  // basic_auth at the edge. localStorage acts as a fast-boot cache and
-  // offline fallback so the UI is never blank during a server hiccup.
-
-  // Every /api request carries the in-app username + role so the backend can
-  // scope files to <DATA_DIR>/<username>/ (and, for admin, list/delete across
-  // every user's folder). Best-effort organization, not real auth — see
-  // api/server.js for the trust model.
-  function apiAuthHeaders() {
-    const u = state.currentUser && state.currentUser.username;
-    const r = state.currentUser && state.currentUser.role;
-    const h = {};
-    if (u) h['X-Minutes-User'] = u;
-    if (r) h['X-Minutes-Role'] = r;
-    return h;
-  }
+  // Meetings live as .md files in the api container's docker volume, scoped
+  // per user. The browser authenticates via an HttpOnly session cookie set
+  // at login, so every /api request is identified server-side — no headers
+  // to spoof. localStorage is only a fast-boot cache for instant paint.
 
   async function apiReadAllMeetings() {
-    const r = await fetch('/api/meetings', {
-      cache: 'no-store',
-      headers: apiAuthHeaders()
-    });
+    const r = await fetch('/api/meetings', { cache: 'no-store' });
     if (!r.ok) throw new Error('GET /api/meetings → ' + r.status);
     return r.json();
   }
@@ -1874,7 +1817,7 @@ Structure it with:
   async function apiWriteMeeting(meeting) {
     const r = await fetch('/api/meetings/' + encodeURIComponent(meeting.id), {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', ...apiAuthHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(meeting)
     });
     if (!r.ok) throw new Error('PUT /api/meetings → ' + r.status);
@@ -1883,18 +1826,12 @@ Structure it with:
 
   async function apiDeleteMeeting(meetingOrId) {
     const id = typeof meetingOrId === 'string' ? meetingOrId : meetingOrId.id;
-    const r = await fetch('/api/meetings/' + encodeURIComponent(id), {
-      method: 'DELETE',
-      headers: apiAuthHeaders()
-    });
+    const r = await fetch('/api/meetings/' + encodeURIComponent(id), { method: 'DELETE' });
     if (!r.ok) throw new Error('DELETE /api/meetings/:id → ' + r.status);
   }
 
   async function apiClearAllMeetings() {
-    const r = await fetch('/api/meetings', {
-      method: 'DELETE',
-      headers: apiAuthHeaders()
-    });
+    const r = await fetch('/api/meetings', { method: 'DELETE' });
     if (!r.ok) throw new Error('DELETE /api/meetings → ' + r.status);
   }
 
@@ -1921,137 +1858,70 @@ Structure it with:
   }
 
   // ==========================================
-  // 10.5. MULTI-USER AUTHENTICATION & OPERATOR CRUD ENGINE
+  // 10.5. AUTHENTICATION & USER MANAGEMENT (server-enforced)
   // ==========================================
+  // Login posts to the API, which sets an HttpOnly session cookie. All
+  // identity/role decisions happen server-side; the client just reflects
+  // what /api/auth/me reports. No passwords or user records live in the
+  // browser anymore.
 
   function initUserAuth() {
-    // 1. Seed default Admin account if first boot (fire-and-forget; the
-    // login form won't be submitted before this resolves under any plausible
-    // human timing, and a failure is logged via the awaited promise)
-    seedDefaultAdmin().catch((e) => console.error("seedDefaultAdmin failed", e));
-
-    // 2. Event Listener: Login Submission
+    // Login form → POST /api/auth/login
     elements.authForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const username = elements.authUsername.value.trim().toLowerCase();
       const password = elements.authPassword.value;
-
       if (!username || !password) {
         showToast("Please fill in all authentication fields.", "error");
         return;
       }
-
-      let users = [];
       try {
-        users = JSON.parse(localStorage.getItem('minutae_users') || '[]');
-      } catch (err) {
-        console.error("Failed to load users for authentication check", err);
-      }
-
-      let match = null;
-      let matchedLegacy = false;
-      for (const u of users) {
-        if (u.username !== username) continue;
-        const result = await pwVerify(password, u.passwordHash);
-        if (result.ok) {
-          match = u;
-          matchedLegacy = result.legacy;
+        const r = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          showToast(err.error || "Invalid username or password.", "error");
+          return;
         }
-        break;
-      }
-
-      // Auto-upgrade legacy plaintext entries to a salted hash on successful login
-      if (match && matchedLegacy) {
-        try {
-          match.passwordHash = await pwHash(password);
-          localStorage.setItem('minutae_users', JSON.stringify(users));
-        } catch (e) {
-          console.warn("Failed to upgrade legacy password hash", e);
-        }
-      }
-
-      if (match) {
-        // Session creation
-        state.currentUser = {
-          username: match.username,
-          role: match.role,
-          createdAt: match.createdAt
-        };
-        sessionStorage.setItem('minutae_current_user', JSON.stringify(state.currentUser));
-
-        // Load meetings: localStorage cache for instant render, then sync from server
-        state.meetings = JSON.parse(localStorage.getItem('minutae_meetings_' + state.currentUser.username) || '[]');
-        const fromServer = await syncMeetingsFromServer();
-        if (fromServer) {
-          state.meetings = fromServer;
-          localStorage.setItem('minutae_meetings_' + state.currentUser.username, JSON.stringify(state.meetings));
-        }
-
-        // Trigger dynamic migration for legacy meetings if logging in as Admin
-        if (state.currentUser.username === 'admin') {
-          migrateLegacyMeetings();
-        }
-
-        // Toggle admin elements in UI
-        toggleAdminUIElements(state.currentUser.role);
-
-        // Hide overlay and load dashboard workspace
-        elements.authOverlay.style.display = 'none';
-
-        // Reset form inputs
-        elements.authUsername.value = '';
+        const me = await r.json();
         elements.authPassword.value = '';
-
-        // Load correct UI states and notifications
-        refreshTemplateSelectors();
-        renderArchiveGrid();
-        switchView('dashboard');
-        showToast(`Authenticated successfully. Welcome back, ${state.currentUser.username}!`, "success");
-      } else {
-        showToast("Invalid username or password. Please try again.", "error");
+        elements.authUsername.value = '';
+        await enterApp(me);
+        showToast(`Welcome back, ${me.username}!`, "success");
+      } catch (err) {
+        console.error("Login request failed", err);
+        showToast("Could not reach the server. Try again.", "error");
       }
     });
 
-    // 3. Event Listener: Sign Out Session
-    elements.btnLogout.addEventListener('click', () => {
-      if (confirm("Are you sure you want to sign out?")) {
-        // Clear active session
-        sessionStorage.removeItem('minutae_current_user');
-        state.currentUser = null;
-        state.meetings = [];
-
-        // Reset sidebar active states and panels
-        toggleAdminUIElements('user');
-        
-        // Show auth overlay
-        elements.authOverlay.style.display = 'flex';
-        
-        // Clean layout text inputs
-        elements.meetingTitle.value = '';
-        elements.transcriptInput.value = '';
-        elements.notesInput.value = '';
-
-        // Clear files details
-        if (elements.btnRemoveAudio) elements.btnRemoveAudio.click();
-        if (elements.btnRemoveText) elements.btnRemoveText.click();
-
-        renderArchiveGrid();
-        showToast("Logged out successfully.", "info");
-      }
+    // Sign out → POST /api/auth/logout
+    elements.btnLogout.addEventListener('click', async () => {
+      if (!confirm("Are you sure you want to sign out?")) return;
+      try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+      state.currentUser = null;
+      state.meetings = [];
+      toggleAdminUIElements('operator');
+      elements.meetingTitle.value = '';
+      elements.transcriptInput.value = '';
+      elements.notesInput.value = '';
+      if (elements.btnRemoveAudio) { try { elements.btnRemoveAudio.click(); } catch {} }
+      if (elements.btnRemoveText) { try { elements.btnRemoveText.click(); } catch {} }
+      renderArchiveGrid();
+      elements.authOverlay.style.display = 'flex';
+      showToast("Signed out.", "info");
     });
 
-    // 4. Modal Triggers & Form Bindings for Account Registration (Admin Only)
+    // Create-user modal (admin)
     elements.btnCreateUserModal.addEventListener('click', () => {
       elements.createUsername.value = '';
       elements.createPassword.value = '';
       elements.createRole.value = 'user';
       elements.createUserDialog.showModal();
     });
-
-    const closeCreateUserDialog = () => {
-      elements.createUserDialog.close();
-    };
-
+    const closeCreateUserDialog = () => elements.createUserDialog.close();
     elements.btnCloseCreateUser.addEventListener('click', closeCreateUserDialog);
     elements.btnCancelCreateUser.addEventListener('click', closeCreateUserDialog);
 
@@ -2059,173 +1929,101 @@ Structure it with:
       e.preventDefault();
       const username = elements.createUsername.value.trim().toLowerCase();
       const password = elements.createPassword.value;
-      const role = elements.createRole.value;
-
-      if (username.length < 3) {
-        showToast("Username must be at least 3 characters.", "error");
-        return;
-      }
-      if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-        showToast("Username must contain only letters, numbers, and underscores.", "error");
+      // map the form's 'user' option to the server's 'operator' role
+      const role = elements.createRole.value === 'admin' ? 'admin' : 'operator';
+      if (username.length < 3 || !/^[a-z0-9_-]+$/.test(username)) {
+        showToast("Username: 3+ chars, letters/numbers/_/- only.", "error");
         return;
       }
       if (password.length < 4) {
         showToast("Password must be at least 4 characters.", "error");
         return;
       }
-
-      let users = [];
       try {
-        users = JSON.parse(localStorage.getItem('minutae_users') || '[]');
+        const r = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, role })
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          showToast(err.error || "Could not create user.", "error");
+          return;
+        }
+        showToast(`Created account: ${username}`, "success");
+        closeCreateUserDialog();
+        renderUsersTable();
       } catch (err) {
-        console.error("Failed to parse users database", err);
+        console.error("Create user failed", err);
+        showToast("Could not reach the server.", "error");
       }
-
-      if (users.some(u => u.username === username)) {
-        showToast(`Username "${username}" is already taken.`, "error");
-        return;
-      }
-
-      const newUser = {
-        username: username,
-        passwordHash: await pwHash(password),
-        role: role,
-        createdAt: new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
-      };
-
-      users.push(newUser);
-      localStorage.setItem('minutae_users', JSON.stringify(users));
-
-      showToast(`Successfully registered operator account: ${username}`, "success");
-      closeCreateUserDialog();
-      renderUsersTable();
     });
 
-    // 5. Boot session from the gateway-verified identity (Caddy-only auth).
-    // The app no longer shows its own login screen — the reverse proxy's
-    // basic_auth is the single sign-on, and /api/whoami tells us who that is.
+    // Boot: ask the server if we already have a valid session
     bootSession();
   }
 
-  async function bootSession() {
-    // Hide the obsolete login overlay up front so it never flashes while
-    // the whoami round-trip is in flight.
-    if (elements.authOverlay) elements.authOverlay.style.display = 'none';
-    // Ask the server who the gateway authenticated us as.
-    try {
-      const r = await fetch('/api/whoami', { cache: 'no-store' });
-      if (!r.ok) throw new Error('whoami ' + r.status);
-      const me = await r.json();
-      state.currentUser = { username: me.username, role: me.role };
-    } catch (e) {
-      console.warn('whoami failed; falling back to local admin identity', e);
-      state.currentUser = { username: 'local', role: 'admin' };
-    }
-    sessionStorage.setItem('minutae_current_user', JSON.stringify(state.currentUser));
-
-    // The app login overlay is obsolete under Caddy-only auth — keep it hidden.
-    if (elements.authOverlay) elements.authOverlay.style.display = 'none';
+  // Bring the app into the logged-in state for the given identity.
+  async function enterApp(me) {
+    state.currentUser = { username: me.username, role: me.role };
     toggleAdminUIElements(state.currentUser.role);
+    elements.authOverlay.style.display = 'none';
 
-    // Load meetings: cache first for instant paint, then authoritative server list
+    // Fast paint from cache, then authoritative server list
     state.meetings = JSON.parse(localStorage.getItem('minutae_meetings_' + state.currentUser.username) || '[]');
     const fromServer = await syncMeetingsFromServer();
     if (fromServer) {
       state.meetings = fromServer;
       localStorage.setItem('minutae_meetings_' + state.currentUser.username, JSON.stringify(state.meetings));
     }
-
     refreshTemplateSelectors();
     renderArchiveGrid();
     switchView('dashboard');
   }
 
-  // Seeding default administrator profile
-  async function seedDefaultAdmin() {
-    let users = [];
+  async function bootSession() {
     try {
-      users = JSON.parse(localStorage.getItem('minutae_users') || '[]');
-    } catch (e) {
-      console.error("Failed to read user store during boot", e);
-    }
-
-    if (!Array.isArray(users) || users.length === 0) {
-      users = [
-        {
-          username: 'admin',
-          passwordHash: await pwHash('admin123'),
-          role: 'admin',
-          createdAt: new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
-        }
-      ];
-      localStorage.setItem('minutae_users', JSON.stringify(users));
-    }
-  }
-
-  // Port generic unauthenticated templates/summaries to seed administrator
-  function migrateLegacyMeetings() {
-    const legacy = localStorage.getItem('minutae_meetings');
-    if (legacy) {
-      try {
-        const legacyMeetings = JSON.parse(legacy);
-        if (Array.isArray(legacyMeetings) && legacyMeetings.length > 0) {
-          const adminKey = 'minutae_meetings_admin';
-          const adminMeetings = JSON.parse(localStorage.getItem(adminKey) || '[]');
-          
-          // Combine existing records, filter duplicates
-          const merged = [...legacyMeetings, ...adminMeetings];
-          const unique = [];
-          const seenIds = new Set();
-          
-          for (const meet of merged) {
-            if (!seenIds.has(meet.id)) {
-              seenIds.add(meet.id);
-              unique.push(meet);
-            }
-          }
-          
-          localStorage.setItem(adminKey, JSON.stringify(unique));
-          // Synchronize state.meetings
-          state.meetings = unique;
-        }
-      } catch (e) {
-        console.error("Pre-existing data migration error", e);
+      const r = await fetch('/api/auth/me', { cache: 'no-store' });
+      if (r.ok) {
+        const me = await r.json();
+        await enterApp(me);
+        return;
       }
-      localStorage.removeItem('minutae_meetings');
+    } catch (e) {
+      console.warn('Session check failed', e);
     }
+    // Not authenticated → show the login overlay
+    state.currentUser = null;
+    elements.authOverlay.style.display = 'flex';
   }
 
   // Toggle admin-only element blocks (e.g. User Management sidebar button)
   function toggleAdminUIElements(role) {
-    const adminBtns = document.querySelectorAll('.admin-only');
-    adminBtns.forEach(btn => {
-      if (role === 'admin') {
-        btn.style.display = 'flex';
-      } else {
-        btn.style.display = 'none';
-      }
+    document.querySelectorAll('.admin-only').forEach((btn) => {
+      btn.style.display = role === 'admin' ? 'flex' : 'none';
     });
   }
 
-  // Directory renderer for registered administrators & operator credentials
-  function renderUsersTable() {
+  // ---- User management (admin), backed by the API ----
+  async function renderUsersTable() {
     let users = [];
     try {
-      users = JSON.parse(localStorage.getItem('minutae_users') || '[]');
+      const r = await fetch('/api/users', { cache: 'no-store' });
+      if (!r.ok) throw new Error('GET /api/users → ' + r.status);
+      users = await r.json();
     } catch (e) {
-      console.error("Failed to fetch users directory index", e);
+      console.error("Failed to load users", e);
+      showToast("Could not load users.", "error");
+      return;
     }
 
     elements.usersTableBody.innerHTML = '';
-
-    users.forEach(user => {
+    users.forEach((user) => {
       const row = document.createElement('tr');
       row.style.borderBottom = '1px solid rgba(255, 255, 255, 0.03)';
-
-      const isSelf = user.username === state.currentUser.username;
+      const isSelf = state.currentUser && user.username === state.currentUser.username;
       const badgeClass = user.role === 'admin' ? 'badge-purple' : 'badge-cyan';
       const roleLabel = user.role === 'admin' ? 'Admin' : 'Operator';
-
       const safeUsername = esc(user.username);
       row.innerHTML = `
         <td style="padding: 1rem 0.5rem; font-weight: 500;">
@@ -2247,9 +2045,7 @@ Structure it with:
               Reset Pass
             </button>
             ${!isSelf ? `
-              <button class="action-btn-secondary-mini btn-toggle-role" data-username="${safeUsername}">
-                Role
-              </button>
+              <button class="action-btn-secondary-mini btn-toggle-role" data-username="${safeUsername}">Role</button>
               <button class="action-btn-danger-mini btn-delete-user" data-username="${safeUsername}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mini-icon" style="width: 12px; height: 12px;">
                   <polyline points="3 6 5 6 21 6"/>
@@ -2261,85 +2057,60 @@ Structure it with:
           </div>
         </td>
       `;
-
-      // Bind dynamic controller action triggers
-      row.querySelector('.btn-reset-password').addEventListener('click', () => {
-        resetOperatorPassword(user.username);
-      });
-
+      row.querySelector('.btn-reset-password').addEventListener('click', () => resetOperatorPassword(user.username));
       if (!isSelf) {
-        row.querySelector('.btn-toggle-role').addEventListener('click', () => {
-          toggleOperatorRole(user.username);
-        });
-        row.querySelector('.btn-delete-user').addEventListener('click', () => {
-          deleteOperatorAccount(user.username);
-        });
+        row.querySelector('.btn-toggle-role').addEventListener('click', () => toggleOperatorRole(user.username, user.role));
+        row.querySelector('.btn-delete-user').addEventListener('click', () => deleteOperatorAccount(user.username));
       }
-
       elements.usersTableBody.appendChild(row);
     });
   }
 
-  // Operator CRUD triggers
   async function resetOperatorPassword(username) {
     const newPassword = prompt(`Enter new password for ${username} (min 4 characters):`);
     if (newPassword === null) return;
-
     if (newPassword.length < 4) {
       showToast("Password must be at least 4 characters long.", "error");
       return;
     }
-
-    let users = [];
     try {
-      users = JSON.parse(localStorage.getItem('minutae_users') || '[]');
+      const r = await fetch('/api/users/' + encodeURIComponent(username) + '/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPassword })
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.status); }
+      showToast(`Password for ${username} updated.`, "success");
     } catch (e) {
-      console.error(e);
-    }
-
-    const index = users.findIndex(u => u.username === username);
-    if (index !== -1) {
-      users[index].passwordHash = await pwHash(newPassword);
-      localStorage.setItem('minutae_users', JSON.stringify(users));
-      showToast(`Passcode for ${username} has been updated successfully.`, "success");
+      showToast("Reset failed: " + e.message, "error");
     }
   }
 
-  function toggleOperatorRole(username) {
-    let users = [];
+  async function toggleOperatorRole(username, currentRole) {
+    const newRole = currentRole === 'admin' ? 'operator' : 'admin';
     try {
-      users = JSON.parse(localStorage.getItem('minutae_users') || '[]');
-    } catch (e) {
-      console.error(e);
-    }
-
-    const index = users.findIndex(u => u.username === username);
-    if (index !== -1) {
-      const newRole = users[index].role === 'admin' ? 'user' : 'admin';
-      users[index].role = newRole;
-      localStorage.setItem('minutae_users', JSON.stringify(users));
-      showToast(`Role mapping for ${username} set to ${newRole === 'admin' ? 'Admin' : 'Operator'}.`, "success");
+      const r = await fetch('/api/users/' + encodeURIComponent(username) + '/role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole })
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.status); }
+      showToast(`${username} is now ${newRole === 'admin' ? 'Admin' : 'Operator'}.`, "success");
       renderUsersTable();
+    } catch (e) {
+      showToast("Role change failed: " + e.message, "error");
     }
   }
 
-  function deleteOperatorAccount(username) {
-    if (confirm(`Are you absolutely sure you want to permanently delete the profile for ${username}?`)) {
-      let users = [];
-      try {
-        users = JSON.parse(localStorage.getItem('minutae_users') || '[]');
-      } catch (e) {
-        console.error(e);
-      }
-
-      users = users.filter(u => u.username !== username);
-      localStorage.setItem('minutae_users', JSON.stringify(users));
-      
-      // Clean up workspace workspace index
-      localStorage.removeItem('minutae_meetings_' + username);
-      
-      showToast(`Operator ${username} wiped from system database.`, "info");
+  async function deleteOperatorAccount(username) {
+    if (!confirm(`Permanently delete the account for ${username}? Their meetings remain on the server.`)) return;
+    try {
+      const r = await fetch('/api/users/' + encodeURIComponent(username), { method: 'DELETE' });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.status); }
+      showToast(`Deleted account: ${username}`, "info");
       renderUsersTable();
+    } catch (e) {
+      showToast("Delete failed: " + e.message, "error");
     }
   }
 
