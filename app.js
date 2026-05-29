@@ -22,7 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
     isRecording: false,
     recordingStartTime: 0,
     recordingTimerInterval: null,
-    // Mic audio capture (MediaRecorder) → transcribed by Gemini on stop.
+    // Audio capture (MediaRecorder) → transcribed by Gemini on stop.
+    captureSource: localStorage.getItem('minutae_capture_source') || 'mic', // 'mic' | 'tab'
     mediaRecorder: null,
     micStream: null,
     audioChunks: [],
@@ -121,6 +122,7 @@ Structure it with:
     templateSelect: document.getElementById('template-select'),
     btnGenerate: document.getElementById('btn-generate'),
     dictationLangSelect: document.getElementById('dictation-lang-select'),
+    captureSourceSelect: document.getElementById('capture-source-select'),
     
     // New Audio Upload & Input Selector elements
     inputMethodSelect: document.getElementById('input-method-select'),
@@ -961,39 +963,77 @@ Structure it with:
     return '';
   }
 
-  // Starts mic capture. THROWS with a human-readable message on failure so
-  // the caller can surface exactly why (no silent fallbacks).
+  // Starts audio capture from the selected source (mic or tab/system audio).
+  // THROWS with a human-readable message on failure so the caller can surface
+  // exactly why (no silent fallbacks).
   async function startMicCapture() {
     if (!window.isSecureContext) {
-      throw new Error("Microphone needs HTTPS (or localhost). This page isn't a secure context.");
-    }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error("This browser doesn't expose microphone access (navigator.mediaDevices).");
+      throw new Error("Audio capture needs HTTPS (or localhost). This page isn't a secure context.");
     }
     if (typeof MediaRecorder === 'undefined') {
       throw new Error("This browser doesn't support MediaRecorder.");
     }
-    try {
-      state.micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1
+
+    const source = state.captureSource === 'tab' ? 'tab' : 'mic';
+
+    if (source === 'tab') {
+      // Capture clean digital audio from a tab/window/screen the user picks.
+      // Far better than recording speakers through the mic for online
+      // meetings (Zoom/Meet/Teams in a browser) and videos.
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        throw new Error("This browser can't capture tab/system audio (no getDisplayMedia).");
+      }
+      let display;
+      try {
+        display = await navigator.mediaDevices.getDisplayMedia({
+          video: true, // required by the API; we discard the video track
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+        });
+      } catch (e) {
+        const name = e && e.name;
+        if (name === 'NotAllowedError') {
+          throw new Error("Screen-share cancelled or denied. Pick a tab and tick 'Share tab audio'.");
         }
+        throw new Error("Could not capture tab audio: " + (e && e.message ? e.message : name));
+      }
+      const audioTracks = display.getAudioTracks();
+      if (audioTracks.length === 0) {
+        display.getTracks().forEach((t) => t.stop());
+        throw new Error("No audio in that share. Re-share and enable 'Share tab audio' (Chrome: the checkbox at bottom-left).");
+      }
+      // Drop the video track — we only want audio — and keep an audio-only stream
+      display.getVideoTracks().forEach((t) => { t.stop(); display.removeTrack(t); });
+      state.micStream = display;
+      // If the user clicks the browser's native "Stop sharing", end cleanly
+      audioTracks[0].addEventListener('ended', () => {
+        if (state.isRecording) elements.micToggleBtn.click();
       });
-    } catch (e) {
-      const name = e && e.name;
-      if (name === 'NotAllowedError' || name === 'SecurityError') {
-        throw new Error("Microphone permission denied. Allow it via the address-bar icon, then retry.");
+    } else {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("This browser doesn't expose microphone access (navigator.mediaDevices).");
       }
-      if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-        throw new Error("No microphone found. Check your input device.");
+      try {
+        state.micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1
+          }
+        });
+      } catch (e) {
+        const name = e && e.name;
+        if (name === 'NotAllowedError' || name === 'SecurityError') {
+          throw new Error("Microphone permission denied. Allow it via the address-bar icon, then retry.");
+        }
+        if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+          throw new Error("No microphone found. Check your input device.");
+        }
+        if (name === 'NotReadableError') {
+          throw new Error("Microphone is in use by another app. Close it and retry.");
+        }
+        throw new Error("Could not access microphone: " + (e && e.message ? e.message : name));
       }
-      if (name === 'NotReadableError') {
-        throw new Error("Microphone is in use by another app. Close it and retry.");
-      }
-      throw new Error("Could not access microphone: " + (e && e.message ? e.message : name));
     }
 
     state.audioChunks = [];
@@ -1151,8 +1191,21 @@ Structure it with:
       return;
     }
 
-    // Set initial dropdown value
+    // Set initial dropdown values
     elements.dictationLangSelect.value = state.dictationLang;
+    if (elements.captureSourceSelect) {
+      elements.captureSourceSelect.value = state.captureSource;
+      elements.captureSourceSelect.addEventListener('change', (e) => {
+        state.captureSource = e.target.value === 'tab' ? 'tab' : 'mic';
+        localStorage.setItem('minutae_capture_source', state.captureSource);
+        showToast(
+          state.captureSource === 'tab'
+            ? "Source: Tab / System Audio — best for online meetings & videos. You'll pick what to share."
+            : "Source: Microphone — best for in-person meetings.",
+          "info"
+        );
+      });
+    }
 
     // Language is only a hint passed to Gemini at transcription time; changing
     // it mid-recording is harmless and needs no restart.
@@ -1175,14 +1228,14 @@ Structure it with:
         try {
           await startMicCapture();
         } catch (e) {
-          console.error("Mic capture failed to start", e);
+          console.error("Audio capture failed to start", e);
           showToast(e.message || "Could not start recording.", "error");
           return;
         }
         state.isRecording = true;
         elements.dictationBar.classList.add('active');
         elements.micToggleBtn.classList.add('active');
-        elements.recordingStatus.textContent = "Recording…";
+        elements.recordingStatus.textContent = state.captureSource === 'tab' ? "Recording tab audio…" : "Recording…";
         state.recordingStartTime = Date.now();
         elements.recordingTime.textContent = "00:00";
         if (state.recordingTimerInterval) clearInterval(state.recordingTimerInterval);
