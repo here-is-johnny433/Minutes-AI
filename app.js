@@ -1713,40 +1713,39 @@ Structure it with:
     elements.archiveEmptyState.style.display = 'none';
 
     filteredMeetings.forEach(m => {
-      const card = document.createElement('div');
-      card.className = 'archive-card glass-panel';
-      
-      // Calculate a short plain text snippet of summary for teaser
+      const card = document.createElement('article');
+      card.className = 'arch-card';
+
+      // Plain-text teaser from the summary
       const teaserText = m.summary
-        .replace(/[#*`\-|[\]()]/g, '') // remove markdown symbols
+        .replace(/[#*`\-|[\]()]/g, '')
         .replace(/\n+/g, ' ')
-        .substring(0, 140) + '...';
+        .trim()
+        .substring(0, 160) + '…';
 
       const tmplName = (state.templates[m.template] ? state.templates[m.template].name : 'Custom').split(' ')[0];
+      const wordCount = (m.summary.trim().match(/\S+/g) || []).length;
 
-      // Show owner badge when admin is viewing someone else's meeting
+      // Owner shown in the footer when admin views someone else's meeting
       const viewerIsAdmin = state.currentUser && state.currentUser.role === 'admin';
       const showOwner = viewerIsAdmin && m._owner && m._owner !== state.currentUser.username;
-      const ownerBadge = showOwner
-        ? `<span class="badge badge-cyan" style="margin-left: 6px; font-size: 0.7rem;">by ${esc(m._owner)}</span>`
-        : '';
+      const ownerTag = showOwner ? `<span class="arch-owner">by ${esc(m._owner)}</span>` : '';
 
       card.innerHTML = `
-        <div class="card-top">
-          <h3>${esc(m.title)}</h3>
-          <span class="badge ${m.template === 'action' ? 'badge-cyan' : 'badge-purple'}">${esc(tmplName)}</span>
+        <div class="arch-top">
+          <span class="arch-tag">${esc(tmplName)}</span>
+          <span class="arch-date mono">${esc(m.date)}</span>
         </div>
-        <div class="card-date">${esc(m.date)}${ownerBadge}</div>
-        <div class="card-teaser">${esc(teaserText)}</div>
-        <div class="card-footer">
-          <span class="accent-link">Open Highlights →</span>
-          <button class="icon-btn-text delete-meet-btn" data-id="${esc(m.id)}" aria-label="Delete meeting">
-            <svg viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" class="mini-icon">
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-            </svg>
-          </button>
+        <h3>${esc(m.title)}</h3>
+        <p>${esc(teaserText)}</p>
+        <div class="arch-foot">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>
+          <span>${wordCount.toLocaleString()} words</span>
+          ${ownerTag}
         </div>
+        <button class="delete-meet-btn" data-id="${esc(m.id)}" aria-label="Delete meeting">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
       `;
 
       // Open details dialog
@@ -2040,38 +2039,31 @@ Structure it with:
     elements.usersTableBody.innerHTML = '';
     users.forEach((user) => {
       const row = document.createElement('tr');
-      row.style.borderBottom = '1px solid rgba(255, 255, 255, 0.03)';
       const isSelf = state.currentUser && user.username === state.currentUser.username;
-      const badgeClass = user.role === 'admin' ? 'badge-purple' : 'badge-cyan';
-      const roleLabel = user.role === 'admin' ? 'Admin' : 'Operator';
+      const roleClass = user.role === 'admin' ? 'role admin' : 'role';
+      const roleLabel = user.role === 'admin' ? 'Administrator' : 'Standard user';
       const safeUsername = esc(user.username);
+      const initials = esc(user.username.slice(0, 2));
       row.innerHTML = `
-        <td style="padding: 1rem 0.5rem; font-weight: 500;">
-          ${safeUsername} ${isSelf ? '<span style="color: var(--text-muted); font-size: 0.8rem; font-weight: normal; margin-left: 4px;">(You)</span>' : ''}
+        <td>
+          <div class="u-cell">
+            <div class="u-avatar">${initials}</div>
+            <span class="u-name">${safeUsername}${isSelf ? ' <span style="color:var(--ink-3);font-weight:400">(you)</span>' : ''}</span>
+          </div>
         </td>
-        <td style="padding: 1rem 0.5rem;">
-          <span class="badge ${badgeClass}">${roleLabel}</span>
-        </td>
-        <td style="padding: 1rem 0.5rem; color: var(--text-muted); font-size: 0.9rem;">
-          ${esc(user.createdAt || 'N/A')}
-        </td>
-        <td style="padding: 1rem 0.5rem; text-align: right;">
-          <div class="action-group">
-            <button class="action-btn-secondary-mini btn-reset-password" data-username="${safeUsername}">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mini-icon" style="width: 12px; height: 12px;">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-              </svg>
-              Reset Pass
+        <td><span class="${roleClass}">${roleLabel}</span></td>
+        <td class="mono" style="color:var(--ink-3)">${esc(user.createdAt || 'N/A')}</td>
+        <td>
+          <div class="row-actions">
+            <button class="icon-btn btn-reset-password" data-username="${safeUsername}" title="Reset password">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.5 12.5L20 3l1 3-2 2 1 3"/></svg>
             </button>
             ${!isSelf ? `
-              <button class="action-btn-secondary-mini btn-toggle-role" data-username="${safeUsername}">Role</button>
-              <button class="action-btn-danger-mini btn-delete-user" data-username="${safeUsername}">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mini-icon" style="width: 12px; height: 12px;">
-                  <polyline points="3 6 5 6 21 6"/>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                </svg>
-                Delete
+              <button class="icon-btn btn-toggle-role" data-username="${safeUsername}" title="Toggle role">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M8 21H3v-5"/><path d="M3 21l7-7"/></svg>
+              </button>
+              <button class="icon-btn danger btn-delete-user" data-username="${safeUsername}" title="Remove user">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
             ` : ''}
           </div>

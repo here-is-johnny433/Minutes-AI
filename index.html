@@ -3,611 +3,404 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Minutes.AI - Premium Meeting Synthesizer</title>
-  <meta name="description" content="A privacy-first single-page web app that turns meeting audio, live dictation, or transcripts into clean, structured Markdown minutes using Google Gemini AI.">
-  
-  <!-- Modern sleek typography -->
+  <title>Minutes.AI — Meeting Synthesizer</title>
+  <meta name="description" content="A privacy-first web app that turns meeting audio, live dictation, or transcripts into clean, structured Markdown minutes using Google Gemini AI.">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  
-  <link rel="stylesheet" href="styles.css?v=2">
-</head>
-<body class="dark-theme">
-  <!-- Dynamic Glowing Mesh Background -->
-  <div class="mesh-background"></div>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-  <!-- Mobile Navigation Header Bar -->
+  <link rel="stylesheet" href="styles.css?v=3">
+</head>
+<body>
+
+  <!-- Mobile header -->
   <header class="mobile-header">
     <button id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Open navigation menu">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="3" y1="12" x2="21" y2="12"/>
-        <line x1="3" y1="6" x2="21" y2="6"/>
-        <line x1="3" y1="18" x2="21" y2="18"/>
-      </svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <div class="brand">
-      <div class="brand-icon">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-          <path d="M12 2v4M8 5h8M9 20h6"/>
-          <circle cx="8" cy="16" r="1"/>
-          <circle cx="16" cy="16" r="1"/>
-        </svg>
-      </div>
-      <div class="brand-name">
-        <span>Minutes</span><span class="gradient-text">.AI</span>
-      </div>
+      <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" stroke-width="2" stroke-linecap="round"><line x1="6" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="6" y1="16" x2="13" y2="16"/></svg></div>
+      <div class="wordmark"><b>Minutes</b><span class="dot">.</span><span class="ai">AI</span></div>
     </div>
   </header>
-
-  <!-- Mobile Sidebar Drawer Backdrop Overlay -->
   <div id="sidebar-overlay" class="sidebar-overlay"></div>
 
-  <!-- App Wrapper Layout -->
-  <div class="app-container">
-    
-    <!-- Left Premium Sidebar -->
-    <aside class="sidebar">
+  <div class="app">
+
+    <!-- ==================== SIDEBAR ==================== -->
+    <aside class="side sidebar">
       <div class="brand">
-        <div class="brand-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="glow-svg">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-            <path d="M12 2v4M8 5h8M9 20h6"/>
-            <circle cx="8" cy="16" r="1"/>
-            <circle cx="16" cy="16" r="1"/>
-          </svg>
-        </div>
-        <div class="brand-name">
-          <span>Minutes</span><span class="gradient-text">.AI</span>
-        </div>
+        <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" stroke-width="2" stroke-linecap="round"><line x1="6" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="6" y1="16" x2="13" y2="16"/></svg></div>
+        <div class="wordmark"><b>Minutes</b><span class="dot">.</span><span class="ai">AI</span></div>
       </div>
-      
-      <nav class="sidebar-nav">
-        <button class="nav-btn active" data-target="dashboard">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="7" height="9" rx="1"/>
-            <rect x="14" y="3" width="7" height="5" rx="1"/>
-            <rect x="14" y="12" width="7" height="9" rx="1"/>
-            <rect x="3" y="16" width="7" height="5" rx="1"/>
-          </svg>
-          Workspace
+
+      <div class="nav-eyebrow eyebrow">Workspace</div>
+      <nav class="nav">
+        <button class="nav-item nav-btn active" data-target="dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+          <span>Synthesize</span>
         </button>
-        <button class="nav-btn" data-target="archive">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 8v13H3V8"/>
-            <path d="M1 3h22v5H1z"/>
-            <path d="M10 12h4"/>
-          </svg>
-          Archive
-        </button>
-        <button class="nav-btn admin-only" data-target="users">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-          </svg>
-          Users
-        </button>
-        <button class="nav-btn admin-only" data-target="settings">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-          </svg>
-          Settings
-        </button>
-        <button id="btn-logout" class="nav-btn danger" style="margin-top: auto; border: 1px solid rgba(239, 68, 68, 0.15); background: rgba(239, 68, 68, 0.03);">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-            <polyline points="16 17 21 12 16 7"/>
-            <line x1="21" y1="12" x2="9" y2="12"/>
-          </svg>
-          Sign Out
+        <button class="nav-item nav-btn" data-target="archive">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>
+          <span>Archive</span>
         </button>
       </nav>
-      
-      <!-- Quick API Badge in Sidebar -->
-      <div class="sidebar-footer">
+
+      <div class="nav-eyebrow eyebrow" style="margin-top:26px">Administration</div>
+      <nav class="nav">
+        <button class="nav-item nav-btn admin-only" data-target="users" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Users</span>
+        </button>
+        <button class="nav-item nav-btn admin-only" data-target="settings" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Settings</span>
+        </button>
+      </nav>
+
+      <div class="side-spacer"></div>
+      <div class="side-foot">
         <div id="api-status-badge" class="api-status disconnected">
-          <span class="status-dot"></span>
           <span class="status-text">No API Key Configured</span>
         </div>
+        <button id="btn-logout" class="signout">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span>Sign out</span>
+        </button>
       </div>
     </aside>
 
-    <!-- Main Workspace Area -->
-    <main class="main-content">
-      
-      <!-- ==================== VIEW: WORKSPACE ==================== -->
+    <!-- ==================== MAIN ==================== -->
+    <main class="main">
+
+      <!-- ===== VIEW: WORKSPACE ===== -->
       <section id="view-dashboard" class="content-view active">
-        <header class="content-header">
+        <header class="topbar">
           <div>
             <h1>Meeting Workspace</h1>
-            <p class="subtitle">Draft, dictate, and synthesize AI-powered meeting intelligence.</p>
+            <p class="page-sub">Draft, dictate, and synthesize meeting minutes with AI.</p>
           </div>
-          <div class="header-actions">
-            <!-- Sleek input for meeting title -->
-            <div class="title-input-container">
-              <label for="meeting-title" class="sr-only">Meeting Title</label>
-              <input type="text" id="meeting-title" class="glass-input title-field" placeholder="Untitled Meeting" value="Weekly Sync - May 20, 2026">
-            </div>
+          <div class="meeting-meta">
+            <span class="eyebrow">Meeting title</span>
+            <label for="meeting-title" class="sr-only">Meeting Title</label>
+            <input id="meeting-title" class="meeting-title-field" value="Weekly Sync — May 20, 2026" placeholder="Untitled Meeting">
           </div>
         </header>
 
-        <!-- Dynamic Two-Column Layout -->
-        <div class="workspace-grid">
-          
-          <!-- Column 1: Transcript Processing (Audio / Text Input) -->
-          <div class="workspace-card glass-panel flex-column">
-            <div class="card-header">
-              <div class="card-title-group">
-                <span class="card-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                    <line x1="12" y1="19" x2="12" y2="23"/>
-                    <line x1="8" y1="23" x2="16" y2="23"/>
-                  </svg>
-                </span>
-                <h2>1. Meeting Transcript</h2>
+        <div class="canvas">
+          <div class="work-grid">
+
+            <!-- Panel 01: transcript -->
+            <section class="panel">
+              <div class="panel-head">
+                <span class="panel-num">01</span>
+                <div class="grow">
+                  <div class="panel-title">Meeting transcript</div>
+                  <div class="panel-sub">Record live, paste text, or upload a file.</div>
+                </div>
               </div>
-            </div>
-            
-            <div class="transcript-workspace">
-              <!-- Input Method Dropdown Row -->
-              <div class="input-method-row">
-                <label for="input-method-select" class="method-label">Input Source:</label>
-                <select id="input-method-select" class="glass-select-mini">
-                  <option value="microphone" selected>🎤 Microphone (Live Recording)</option>
-                  <option value="text">✍️ Write / Paste Transcript</option>
-                  <option value="audio-file">🎵 Audio File Upload</option>
-                  <option value="text-file">📄 Import Text File (.txt/.md)</option>
+
+              <div class="source-row">
+                <span class="field-label">Source</span>
+                <select id="input-method-select" class="select grow">
+                  <option value="microphone" selected>Microphone — live recording</option>
+                  <option value="text">Write / paste transcript</option>
+                  <option value="audio-file">Audio file upload</option>
+                  <option value="text-file">Import text file (.txt/.md)</option>
                 </select>
 
-                <!-- Capture source + language (only relevant for live recording) -->
-                <div id="mic-inline-controls" class="mic-inline-controls" style="display: none;">
-                  <select id="capture-source-select" class="glass-select-mini" aria-label="Audio Capture Source" title="Where to capture audio from">
-                    <option value="mic">🎙️ Microphone</option>
-                    <option value="tab">🖥️ Tab / System Audio</option>
+                <div id="mic-inline-controls" class="mic-inline-controls" style="display:none">
+                  <select id="capture-source-select" class="select" aria-label="Audio Capture Source" title="Where to capture audio from">
+                    <option value="mic">Microphone</option>
+                    <option value="tab">Tab / System Audio</option>
                   </select>
-                  <select id="dictation-lang-select" class="glass-select-mini" aria-label="Transcription Language">
-                    <option value="en-US">🇺🇸 English</option>
-                    <option value="es-ES">🇪🇸 Español (España)</option>
-                    <option value="es-MX">🇬🇹 Español (Latam)</option>
-                    <option value="de-DE">🇩🇪 Deutsch</option>
-                    <option value="fr-FR">🇫🇷 Français</option>
-                    <option value="it-IT">🇮🇹 Italiano</option>
-                    <option value="pt-BR">🇧🇷 Português</option>
-                    <option value="ja-JP">🇯🇵 日本語</option>
-                    <option value="zh-CN">🇨🇳 中文</option>
+                  <select id="dictation-lang-select" class="select" aria-label="Transcription Language">
+                    <option value="en-US">English</option>
+                    <option value="es-ES">Español (España)</option>
+                    <option value="es-MX">Español (Latam)</option>
+                    <option value="de-DE">Deutsch</option>
+                    <option value="fr-FR">Français</option>
+                    <option value="it-IT">Italiano</option>
+                    <option value="pt-BR">Português</option>
+                    <option value="ja-JP">日本語</option>
+                    <option value="zh-CN">中文</option>
                   </select>
                 </div>
               </div>
 
-              <!-- Text File Container (New Feature) -->
-              <div id="text-file-container" class="audio-workspace glass-inner-panel" style="display: none;">
-                <!-- Drag and Drop Zone -->
-                <div id="text-dropzone" class="audio-dropzone">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="dropzone-icon">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                    <line x1="16" y1="13" x2="8" y2="13"/>
-                    <line x1="16" y1="17" x2="8" y2="17"/>
-                    <polyline points="10 9 9 9 8 9"/>
-                  </svg>
-                  <h3>Drag & Drop Text File</h3>
-                  <p class="dropzone-text">Supports .txt, .md (Max 5MB)</p>
-                  <span class="accent-link">or browse files</span>
-                  <input type="file" id="text-file-upload" accept=".txt,.md" style="display: none;">
-                </div>
-                
-                <!-- Uploaded Text File Details (Hidden by default) -->
-                <div id="text-file-details" class="audio-file-details" style="display: none;">
-                  <div class="audio-info-card">
-                    <div class="audio-meta">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2" class="audio-file-icon icon-32">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                        <polyline points="14 2 14 8 20 8"/>
-                      </svg>
-                      <div class="audio-text-details">
-                        <h4 id="text-filename" class="audio-title">transcript.txt</h4>
-                        <span id="text-filesize" class="audio-meta-text audio-size">1.2 KB</span>
-                      </div>
-                    </div>
-                    <button id="btn-remove-text" class="btn-remove-icon" title="Remove text file">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mini-icon icon-18">
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Voice Dictation Dashboard Inside Panel -->
-              <div class="dictation-bar glass-inner-panel" style="display: none;">
-                <button id="mic-toggle-btn" class="mic-btn pulse-mic-btn" aria-label="Start audio recording">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mic-icon">
-                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                  </svg>
+              <!-- Recorder (microphone mode) -->
+              <div class="recorder dictation-bar" style="display:none">
+                <button id="mic-toggle-btn" class="mic-btn" aria-label="Start audio recording">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
                 </button>
-                <div class="mic-status-text">
-                  <span id="recording-status">Microphone Idle</span>
-                  <span id="recording-time" class="recording-time">00:00</span>
+                <div class="rec-meta">
+                  <span id="recording-status" class="rec-status">Microphone idle</span>
+                  <span id="recording-time" class="rec-time mono">00:00</span>
                 </div>
-
-                <div class="dictation-visualizer">
-                  <div class="bar bar-1"></div>
-                  <div class="bar bar-2"></div>
-                  <div class="bar bar-3"></div>
-                  <div class="bar bar-4"></div>
-                  <div class="bar bar-5"></div>
-                </div>
+                <div class="rec-wave"><i></i><i></i><i></i><i></i><i></i></div>
               </div>
 
-              <!-- Container for Text Input -->
-              <div id="text-input-container">
-                <textarea id="transcript-input" class="glass-textarea" placeholder="Paste your raw meeting transcript here, upload a .txt file, or use the live voice recorder below to dictate in real time..."></textarea>
-              </div>
-
-              <!-- Audio File Container (New Feature) -->
-              <div id="audio-file-container" class="audio-workspace glass-inner-panel" style="display: none;">
-                <!-- Audio File Language Selector (Always visible in panel) -->
+              <!-- Audio file upload -->
+              <div id="audio-file-container" class="audio-workspace" style="display:none">
                 <div class="audio-lang-row">
-                  <div class="flex-center-gap-8">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2" class="icon-16">
-                      <circle cx="12" cy="12" r="10"/>
-                      <line x1="2" y1="12" x2="22" y2="12"/>
-                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                    </svg>
-                    <label for="audio-lang-select" class="audio-lang-label">Audio Language</label>
-                  </div>
-                  <select id="audio-lang-select" class="glass-select-mini w-min-140">
-                    <option value="en-US">🇺🇸 English</option>
-                    <option value="es-ES">🇪🇸 Español (España)</option>
-                    <option value="es-MX">🇲🇽 Español (México)</option>
-                    <option value="de-DE">🇩🇪 Deutsch</option>
-                    <option value="fr-FR">🇫🇷 Français</option>
-                    <option value="it-IT">🇮🇹 Italiano</option>
-                    <option value="pt-BR">🇧🇷 Português</option>
-                    <option value="ja-JP">🇯🇵 日本語</option>
-                    <option value="zh-CN">🇨🇳 中文</option>
+                  <span class="field-label">Audio language</span>
+                  <select id="audio-lang-select" class="select">
+                    <option value="en-US">English</option>
+                    <option value="es-ES">Español (España)</option>
+                    <option value="es-MX">Español (Latam)</option>
+                    <option value="de-DE">Deutsch</option>
+                    <option value="fr-FR">Français</option>
+                    <option value="it-IT">Italiano</option>
+                    <option value="pt-BR">Português</option>
+                    <option value="ja-JP">日本語</option>
+                    <option value="zh-CN">中文</option>
                   </select>
                 </div>
-
-                <!-- Drag and Drop Zone -->
                 <div id="audio-dropzone" class="audio-dropzone">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="dropzone-icon">
-                    <path d="M9 18V5l12-2v13"/>
-                    <circle cx="6" cy="18" r="3"/>
-                    <circle cx="18" cy="16" r="3"/>
-                  </svg>
-                  <h3>Drag & Drop Audio File</h3>
-                  <p class="dropzone-text">Supports .mp3, .wav, .m4a, .webm, .ogg (Max 25MB)</p>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="dropzone-icon"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                  <h3>Drag &amp; drop an audio file</h3>
+                  <p class="dropzone-text">Supports .mp3, .wav, .m4a, .webm, .ogg (max 25MB)</p>
                   <span class="accent-link">or browse files</span>
-                  <input type="file" id="audio-file-upload" accept="audio/*" style="display: none;">
+                  <input type="file" id="audio-file-upload" accept="audio/*" style="display:none">
                 </div>
-                
-                <!-- Uploaded Audio File Details (Hidden by default) -->
-                <div id="audio-file-details" class="audio-file-details" style="display: none;">
+                <div id="audio-file-details" style="display:none">
                   <div class="audio-info-card">
                     <div class="audio-meta">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2" class="audio-file-icon icon-32">
-                        <path d="M9 18V5l12-2v13"/>
-                        <circle cx="6" cy="18" r="3"/>
-                        <circle cx="18" cy="16" r="3"/>
-                      </svg>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="var(--ink-2)" stroke-width="1.8" class="audio-file-icon"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
                       <div class="audio-text-details">
-                        <h4 id="audio-filename" class="audio-title">meeting-recording.mp3</h4>
-                        <span id="audio-filesize" class="audio-meta-text audio-size">4.2 MB</span>
+                        <h4 id="audio-filename" class="audio-title">recording.mp3</h4>
+                        <span id="audio-filesize" class="audio-size">4.2 MB</span>
                       </div>
                     </div>
                     <button id="btn-remove-audio" class="btn-remove-icon" title="Remove audio file">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mini-icon icon-18">
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                      </svg>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                     </button>
                   </div>
-                  
-                  <!-- Custom HTML5 Audio Player -->
-                  <div class="audio-player-wrapper mt-10">
-                    <audio id="audio-player" controls class="audio-player"></audio>
+                  <audio id="audio-player" controls></audio>
+                </div>
+              </div>
+
+              <!-- Text file upload -->
+              <div id="text-file-container" class="audio-workspace" style="display:none">
+                <div id="text-dropzone" class="audio-dropzone">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="dropzone-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                  <h3>Drag &amp; drop a text file</h3>
+                  <p class="dropzone-text">Supports .txt, .md (max 5MB)</p>
+                  <span class="accent-link">or browse files</span>
+                  <input type="file" id="text-file-upload" accept=".txt,.md" style="display:none">
+                </div>
+                <div id="text-file-details" style="display:none">
+                  <div class="audio-info-card">
+                    <div class="audio-meta">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="var(--ink-2)" stroke-width="1.8" class="audio-file-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      <div class="audio-text-details">
+                        <h4 id="text-filename" class="audio-title">transcript.txt</h4>
+                        <span id="text-filesize" class="audio-size">1.2 KB</span>
+                      </div>
+                    </div>
+                    <button id="btn-remove-text" class="btn-remove-icon" title="Remove text file">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-          
-          <!-- Column 2: Rough Meeting Notes -->
-          <div class="workspace-card glass-panel flex-column">
-            <div class="card-header">
-              <div class="card-title-group">
-                <span class="card-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 20h9"/>
-                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-                  </svg>
-                </span>
-                <h2>2. Personal Notes & Highlights</h2>
+
+              <div id="text-input-container">
+                <textarea id="transcript-input" class="textarea" placeholder="Paste your raw meeting transcript here, upload a .txt file, or use the recorder above to dictate in real time…"></textarea>
               </div>
-              <span class="badge badge-cyan">Optional / Enhances AI</span>
-            </div>
-            
-            <div class="notes-workspace flex-grow">
-              <textarea id="notes-input" class="glass-textarea h-full" placeholder="Jot down your hand-written rough notes, important observations, action items, or specific topics discussed. 
+            </section>
 
-Our AI combines these notes directly with the transcript to resolve context gaps, highlight key names, and correct errors."></textarea>
-            </div>
+            <!-- Panel 02: notes -->
+            <section class="panel">
+              <div class="panel-head">
+                <span class="panel-num">02</span>
+                <div class="grow">
+                  <div class="panel-title">Personal notes &amp; highlights</div>
+                  <div class="panel-sub">Optional — helps the AI resolve context.</div>
+                </div>
+                <span class="panel-tag">Enhances AI</span>
+              </div>
+              <textarea id="notes-input" class="textarea notes-area" placeholder="Jot down rough notes, observations, or action items.
+
+The AI combines these with the transcript to resolve context gaps, highlight key names, and correct errors."></textarea>
+            </section>
+
           </div>
 
-        </div>
-
-        <!-- Synthesis Options Drawer (Bottom Controls) -->
-        <footer class="synthesis-drawer glass-panel">
-          <div class="drawer-left">
-            <div class="select-group">
-              <label for="template-select">Minutes Template</label>
-              <select id="template-select" class="glass-select">
-                <option value="standard">Standard Chronological Minutes</option>
-                <option value="action">Action Items & Tasks Table</option>
-                <option value="executive">Executive Brief (TL;DR)</option>
-                <option value="technical">Engineering & Tech Spec</option>
-                <option value="creative">Creative Concept Map</option>
+          <div class="synth-bar">
+            <div class="synth-left">
+              <span class="field-label">Template</span>
+              <select id="template-select" class="select">
+                <option value="standard">Standard chronological minutes</option>
+                <option value="action">Action items &amp; tasks</option>
+                <option value="executive">Executive brief</option>
+                <option value="technical">Engineering &amp; tech spec</option>
+                <option value="creative">Creative concept map</option>
               </select>
             </div>
-          </div>
-          
-          <div class="drawer-right">
-            <button id="btn-generate" class="action-btn-primary">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon glow-svg">
-                <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
-              </svg>
-              Synthesize Minutes with AI
+            <button id="btn-generate" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6z"/></svg>
+              Synthesize minutes
             </button>
           </div>
-        </footer>
+        </div>
       </section>
 
-      <!-- ==================== VIEW: ARCHIVE ==================== -->
+      <!-- ===== VIEW: ARCHIVE ===== -->
       <section id="view-archive" class="content-view">
-        <header class="content-header">
+        <header class="topbar">
           <div>
-            <h1>Meeting Archive</h1>
-            <p class="subtitle">Search, organize, and view past synthesized meeting intelligence.</p>
+            <h1>Archive</h1>
+            <p class="page-sub">Search and revisit past synthesized meeting minutes.</p>
           </div>
         </header>
-
-        <!-- Search and Filter Bar -->
-        <div class="filter-bar glass-panel">
-          <div class="search-input-wrapper">
-            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="8"/>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            <input type="text" id="archive-search" class="glass-input" placeholder="Search by title, content, or notes...">
+        <div class="canvas">
+          <div class="toolbar">
+            <div class="search">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="archive-search" class="input" placeholder="Search by title, content, or notes…">
+            </div>
+            <select id="archive-filter-template" class="select">
+              <option value="all">All templates</option>
+              <option value="standard">Standard minutes</option>
+              <option value="action">Action items</option>
+              <option value="executive">Executive briefs</option>
+              <option value="technical">Technical specs</option>
+              <option value="creative">Creative maps</option>
+            </select>
           </div>
-          
-          <select id="archive-filter-template" class="glass-select">
-            <option value="all">All Templates</option>
-            <option value="standard">Standard Minutes</option>
-            <option value="action">Action Items</option>
-            <option value="executive">Executive Briefs</option>
-            <option value="technical">Technical Specs</option>
-            <option value="creative">Creative Maps</option>
-          </select>
-        </div>
-
-        <!-- Archive Grid -->
-        <div id="archive-grid" class="archive-grid">
-          <!-- Populated dynamically via JS -->
-        </div>
-
-        <!-- Empty State Visual -->
-        <div id="archive-empty-state" class="empty-state">
-          <div class="empty-icon-glow">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
-              <polyline points="14 2 14 8 20 8"/>
-              <line x1="16" y1="13" x2="8" y2="13"/>
-              <line x1="16" y1="17" x2="8" y2="17"/>
-              <polyline points="10 9 9 9 8 9"/>
-            </svg>
+          <div id="archive-grid" class="arch-grid"></div>
+          <div id="archive-empty-state" class="empty-state">
+            <h3 style="font-size:17px;font-weight:600;margin-bottom:8px;color:var(--ink)">No synthesized meetings yet</h3>
+            <p style="margin-bottom:18px">Head to the workspace to create your first set of minutes.</p>
+            <button class="btn btn-ghost btn-sm nav-btn" data-target="dashboard" style="display:inline-flex">Open workspace</button>
           </div>
-          <h3>No Synthesized Meetings Found</h3>
-          <p>You haven't generated any AI minutes yet. Go to the workspace to create your first report.</p>
-          <button class="nav-btn action-btn-primary mt-4" data-target="dashboard">Open Workspace</button>
         </div>
       </section>
 
-      <!-- ==================== VIEW: USER MANAGEMENT ==================== -->
+      <!-- ===== VIEW: USERS ===== -->
       <section id="view-users" class="content-view">
-        <header class="content-header">
+        <header class="topbar">
           <div>
-            <h1>User Management</h1>
-            <p class="subtitle">Create, audit, and configure roles for system operators.</p>
+            <h1>Users</h1>
+            <p class="page-sub">Create, audit, and configure roles for operators.</p>
           </div>
-          <button id="btn-create-user-modal" class="action-btn-primary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mini-icon">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-              <circle cx="9" cy="7" r="4"/>
-              <line x1="19" y1="8" x2="19" y2="14"/>
-              <line x1="16" y1="11" x2="22" y2="11"/>
-            </svg>
-            Add New User
+          <button id="btn-create-user-modal" class="btn btn-primary btn-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add user
           </button>
         </header>
-
-        <!-- User Directory Table Card -->
-        <div class="workspace-card glass-panel flex-column">
-          <div class="card-header border-b">
-            <h2 class="card-title">Registered Operator Accounts</h2>
-          </div>
-          
-          <div style="overflow-x: auto; padding: 1.5rem;">
-            <table class="glass-table" style="width: 100%; border-collapse: collapse; text-align: left;">
-              <thead>
-                <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); color: var(--text-secondary); font-size: 0.9rem;">
-                  <th style="padding: 1rem 0.5rem;">Username</th>
-                  <th style="padding: 1rem 0.5rem;">Role</th>
-                  <th style="padding: 1rem 0.5rem;">Created On</th>
-                  <th style="padding: 1rem 0.5rem; text-align: right;">System Actions</th>
-                </tr>
-              </thead>
-              <tbody id="users-table-body">
-                <!-- Populated dynamically via JS -->
-              </tbody>
-            </table>
-          </div>
+        <div class="canvas">
+          <table class="table">
+            <thead>
+              <tr><th>User</th><th>Role</th><th>Created</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="users-table-body"></tbody>
+          </table>
         </div>
       </section>
 
-      <!-- ==================== VIEW: SETTINGS ==================== -->
+      <!-- ===== VIEW: SETTINGS ===== -->
       <section id="view-settings" class="content-view">
-        <header class="content-header">
+        <header class="topbar">
           <div>
-            <h1>System Settings</h1>
-            <p class="subtitle">Configure AI model properties, API connections, and local parameters.</p>
+            <h1>Settings</h1>
+            <p class="page-sub">Configure the AI engine, API access, and local data.</p>
           </div>
         </header>
+        <div class="canvas">
+          <div class="settings">
 
-        <div class="settings-container">
-          <!-- Left Column: Settings Inputs -->
-          <div class="settings-column flex-column gap-6">
-            
-            <!-- Card 1: AI Provider Configuration -->
-            <div class="workspace-card glass-panel">
-              <div class="card-header border-b">
-                <h2 class="card-title">AI Engine Settings</h2>
-              </div>
-              <div class="card-content flex-column gap-4">
-                
-                <!-- AI Engine Selector -->
-                <div class="form-group">
-                  <label for="ai-engine-select">Synthesis Engine</label>
-                  <select id="ai-engine-select" class="glass-select">
-                    <option value="cloud-gemini">Cloud Gemini API (Flexible & Universal)</option>
-                    <option value="local-gemini" id="option-local-ai">On-Device Gemini Nano (Privacy-First Chrome AI)</option>
+            <!-- AI engine -->
+            <div class="set-block">
+              <span class="eyebrow">Synthesis</span>
+              <h2>AI engine</h2>
+              <p class="blurb">Choose whether summaries are generated on-device or via the cloud, and connect your key.</p>
+              <div class="set-card">
+                <div class="form-row">
+                  <label for="ai-engine-select">Engine</label>
+                  <select id="ai-engine-select" class="select" style="max-width:none;width:100%">
+                    <option value="cloud-gemini">Cloud Gemini API — flexible &amp; universal</option>
+                    <option value="local-gemini" id="option-local-ai">On-device Gemini Nano — privacy-first</option>
                   </select>
-                  <p class="field-hint">Select whether summaries are generated locally in your browser or sent to Google's cloud servers.</p>
                 </div>
-                
-                <!-- Cloud API Key Field (Visible if cloud selected) -->
-                <div id="cloud-api-config" class="form-group">
-                  <div class="flex-between">
-                    <label for="api-key-input">Google Gemini API Key</label>
-                    <a href="https://aistudio.google.com/" target="_blank" class="accent-link">Get a free key at AI Studio</a>
-                  </div>
-                  <div class="password-field-container">
-                    <input type="password" id="api-key-input" class="glass-input" placeholder="AIzaSy...">
-                    <button id="api-key-toggle-btn" class="icon-btn-text" aria-label="Toggle password visibility">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mini-icon">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                        <circle cx="12" cy="12" r="3"/>
-                      </svg>
+
+                <div id="cloud-api-config" class="form-row">
+                  <label for="api-key-input">Google Gemini API key</label>
+                  <div class="pwd">
+                    <input type="password" id="api-key-input" class="input" placeholder="AIzaSy…">
+                    <button id="api-key-toggle-btn" class="eye" aria-label="Toggle password visibility">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
                     </button>
                   </div>
-                  <p class="field-hint">Your key is stored 100% locally in your own browser's localStorage and only sends direct requests to the official Google AI client SDK endpoints.</p>
+                  <span class="hint">Stored only in your browser. Requests go directly to Google's AI endpoints. <a href="https://aistudio.google.com/" target="_blank" class="accent-link">Get a free key</a>.</span>
                 </div>
 
-                <!-- Local Gemini Nano Status Display (Visible if local selected) -->
-                <div id="local-ai-config" class="form-group" style="display:none;">
-                  <div class="local-ai-status-card glass-inner-panel">
-                    <div class="flex-between mb-2">
-                      <span class="status-label">On-Device Model (Gemini Nano)</span>
-                      <span id="local-status-badge" class="badge badge-cyan">Checking...</span>
+                <div id="local-ai-config" class="form-row" style="display:none">
+                  <div class="set-card" style="background:var(--field)">
+                    <div class="row-between" style="margin-bottom:10px">
+                      <span style="font-weight:600;font-size:13px">On-device model (Gemini Nano)</span>
+                      <span id="local-status-badge" class="role">Checking…</span>
                     </div>
-                    
-                    <p id="local-status-desc" class="field-hint mb-3">Initializing native Chrome AI interface check...</p>
-                    
-                    <!-- Progress Bar for Downloading -->
-                    <div id="local-download-progress-container" style="display:none;" class="mb-3">
-                      <div class="flex-between text-xs mb-1">
-                        <span>Downloading Language Model Asset (~2GB)</span>
+                    <p id="local-status-desc" class="hint" style="margin-bottom:12px">Initializing native Chrome AI interface check…</p>
+                    <div id="local-download-progress-container" style="display:none;margin-bottom:12px">
+                      <div class="row-between" style="font-size:11.5px;color:var(--ink-3);margin-bottom:2px">
+                        <span>Downloading model asset (~2GB)</span>
                         <span id="local-download-pct">0%</span>
                       </div>
-                      <div class="progress-bar-bg">
-                        <div id="local-download-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
-                      </div>
+                      <div class="progress-track"><div id="local-download-progress-fill" class="progress-fill"></div></div>
                     </div>
-                    
-                    <!-- User Gesture Trigger Download Button -->
-                    <button id="btn-trigger-model-download" class="action-btn-secondary w-full" style="display:none;">
-                      Initialize Model Download
-                    </button>
+                    <button id="btn-trigger-model-download" class="btn btn-ghost btn-sm" style="display:none">Initialize model download</button>
                   </div>
                 </div>
-
               </div>
             </div>
 
-            <!-- Card 2: Custom Meeting Templates Editor -->
-            <div class="workspace-card glass-panel">
-              <div class="card-header border-b">
-                <h2 class="card-title">Custom Meeting Templates</h2>
-              </div>
-              <div class="card-content flex-column gap-4">
-                
-                <!-- Selector to edit templates -->
-                <div class="form-group">
-                  <label for="template-edit-select">Select Template to Edit</label>
-                  <select id="template-edit-select" class="glass-select">
-                    <option value="standard">Standard Chronological Minutes</option>
-                    <option value="action">Action Items & Tasks Table</option>
-                    <option value="executive">Executive Brief (TL;DR)</option>
-                    <option value="technical">Engineering & Tech Spec</option>
-                    <option value="creative">Creative Concept Map</option>
+            <!-- Templates -->
+            <div class="set-block">
+              <span class="eyebrow">Output</span>
+              <h2>Templates</h2>
+              <p class="blurb">Customize the prompts that shape each kind of minutes.</p>
+              <div class="set-card">
+                <div class="form-row">
+                  <label for="template-edit-select">Template to edit</label>
+                  <select id="template-edit-select" class="select" style="max-width:none;width:100%">
+                    <option value="standard">Standard chronological minutes</option>
+                    <option value="action">Action items &amp; tasks</option>
+                    <option value="executive">Executive brief</option>
+                    <option value="technical">Engineering &amp; tech spec</option>
+                    <option value="creative">Creative concept map</option>
                   </select>
-                  <p class="field-hint">Choose which AI analysis template you would like to customize.</p>
                 </div>
-
-                <!-- Template Custom Display Name -->
-                <div class="form-group">
-                  <label for="template-edit-name">Template Name</label>
-                  <input type="text" id="template-edit-name" class="glass-input" placeholder="e.g. Standard Chronological Minutes">
-                  <p class="field-hint">The custom display name that will show up in template dropdown menus.</p>
+                <div class="form-row">
+                  <label for="template-edit-name">Display name</label>
+                  <input type="text" id="template-edit-name" class="input" placeholder="e.g. Standard chronological minutes">
                 </div>
-
-                <!-- Template Prompt Editor -->
-                <div class="form-group">
-                  <label for="template-edit-prompt">AI Instructions / Prompt</label>
-                  <textarea id="template-edit-prompt" class="glass-textarea" style="height: 160px;" placeholder="Instructions for the AI synthesizer..."></textarea>
-                  <p class="field-hint">Specify exact sections, tables, format guidelines, and constraints for the AI synthesis engine.</p>
+                <div class="form-row">
+                  <label for="template-edit-prompt">AI instructions / prompt</label>
+                  <textarea id="template-edit-prompt" class="input" style="min-height:150px;resize:vertical;font-family:var(--sans);line-height:1.6" placeholder="Instructions for the AI synthesizer…"></textarea>
                 </div>
-
-                <!-- Action Buttons -->
-                <div class="flex-row gap-2 mt-2">
-                  <button id="btn-save-template" class="action-btn-primary flex-1-center">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mini-icon">
-                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                      <polyline points="17 21 17 13 7 13 7 21"/>
-                      <polyline points="7 3 7 8 15 8"/>
-                    </svg>
-                    Save Template Changes
-                  </button>
-                  <button id="btn-reset-templates" class="action-btn-secondary" title="Restore defaults">
-                    Reset Defaults
-                  </button>
+                <div class="row-between" style="justify-content:flex-start;gap:10px;margin-top:16px">
+                  <button id="btn-save-template" class="btn btn-primary btn-sm">Save changes</button>
+                  <button id="btn-reset-templates" class="btn btn-ghost btn-sm">Reset defaults</button>
                 </div>
-
               </div>
             </div>
 
-            <!-- Card 3: Local Cache Manager -->
-            <div class="workspace-card glass-panel">
-              <div class="card-header border-b">
-                <h2 class="card-title">Local Data Maintenance</h2>
-              </div>
-              <div class="card-content">
-                <div class="flex-between">
+            <!-- Danger zone -->
+            <div class="set-block">
+              <span class="eyebrow">Danger zone</span>
+              <h2>Local data</h2>
+              <div class="set-card">
+                <div class="row-between">
                   <div>
-                    <h4>Clear Local Meeting Archive</h4>
-                    <p class="field-hint">Permanently deletes all archived summaries from the server (shared pool) and your browser cache. This cannot be undone.</p>
+                    <div style="font-weight:600;font-size:13.5px">Clear meeting archive</div>
+                    <span class="hint">Permanently deletes every saved summary from the server and your browser cache. This cannot be undone.</span>
                   </div>
-                  <button id="btn-clear-archive" class="danger-btn-secondary">
-                    Clear Archive
+                  <button id="btn-clear-archive" class="btn btn-danger btn-sm">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    Clear archive
                   </button>
                 </div>
               </div>
@@ -620,169 +413,119 @@ Our AI combines these notes directly with the transcript to resolve context gaps
     </main>
   </div>
 
-  <!-- ==================== DIALOG OVERLAYS ==================== -->
+  <!-- ==================== DIALOGS ==================== -->
 
-  <!-- 1. AI Generation Progress Screen -->
-  <dialog id="generating-dialog" class="glass-dialog">
-    <div class="dialog-content text-center">
-      <div class="generating-spinner-container">
-        <!-- Gorgeous Concentric Spinner Animation -->
-        <div class="spinner spinner-outer"></div>
-        <div class="spinner spinner-inner"></div>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spinner-center-icon glow-svg">
-          <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
-        </svg>
-      </div>
-      
-      <h2>Synthesizing Intelligence</h2>
-      <p class="dialog-subtext">Merging your personal transcript and notes using artificial intelligence...</p>
-      
-      <!-- Interactive Progress Log -->
-      <div class="progress-log glass-inner-panel">
-        <div class="log-item" id="log-step-1">
-          <span class="log-checkbox"></span>
-          <span class="log-text">Formatting raw transcripts...</span>
+  <!-- Generating -->
+  <dialog id="generating-dialog" class="app-dialog">
+    <div class="dialog" style="max-width:440px">
+      <div class="dialog-body gen">
+        <div class="ring"></div>
+        <h2>Synthesizing minutes</h2>
+        <p>Merging your transcript and notes into a structured summary…</p>
+        <div class="log">
+          <div class="log-item" id="log-step-1"><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span class="log-text">Formatting raw transcript</span></div>
+          <div class="log-item" id="log-step-2"><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span class="log-text">Analyzing notes for context</span></div>
+          <div class="log-item" id="log-step-3"><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span class="log-text">Synthesizing with selected template</span></div>
+          <div class="log-item" id="log-step-4"><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span class="log-text">Rendering final report</span></div>
         </div>
-        <div class="log-item" id="log-step-2">
-          <span class="log-checkbox"></span>
-          <span class="log-text">Analyzing meeting notes context...</span>
-        </div>
-        <div class="log-item" id="log-step-3">
-          <span class="log-checkbox"></span>
-          <span class="log-text">Synthesizing content with selected template...</span>
-        </div>
-        <div class="log-item" id="log-step-4">
-          <span class="log-checkbox"></span>
-          <span class="log-text">Rendering final Markdown report...</span>
-        </div>
-      </div>
-      
-      <button id="btn-cancel-generation" class="action-btn-secondary mt-4">
-        Cancel Generation
-      </button>
-    </div>
-  </dialog>
-
-  <!-- 2. Interactive Synthesized Results Viewer -->
-  <dialog id="results-dialog" class="glass-dialog large-dialog" closedby="any">
-    <div class="dialog-header border-b">
-      <div class="flex-column">
-        <span id="results-meta" class="badge badge-purple mb-1">Standard Minutes</span>
-        <h2 id="results-title">Synthesis Results</h2>
-      </div>
-      <button class="dialog-close-btn" aria-label="Close dialog">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"/>
-          <line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
-    </div>
-    
-    <div class="dialog-body flex-grow">
-      <!-- The Generated Markdown output styled beautifully -->
-      <div id="results-markdown-rendered" class="markdown-body">
-        <!-- Rendered markdown goes here -->
-      </div>
-    </div>
-    
-    <div class="dialog-footer border-t">
-      <div class="flex-between w-full">
-        <!-- Delete/Edit details link -->
-        <div>
-          <span class="field-hint" id="result-saved-time">Saved locally to Archive</span>
-        </div>
-        <!-- Primary actions -->
-        <div class="flex-row gap-2">
-          
-          <button id="btn-save-close" class="action-btn-primary">
-            Close & Save
-          </button>
-        </div>
+        <button id="btn-cancel-generation" class="btn btn-ghost btn-sm" style="margin-top:22px">Cancel</button>
       </div>
     </div>
   </dialog>
 
-  <!-- ==================== AUTH & MANAGEMENT DIALOGS ==================== -->
-
-  <!-- Immersive Glassmorphic Login Overlay -->
-  <div id="auth-overlay" class="auth-overlay" style="display: flex;">
-    <div class="auth-card glass-panel">
-      <div class="brand auth-brand">
-        <div class="brand-icon auth-brand-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="glow-svg auth-brand-svg">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-            <path d="M12 2v4M8 5h8M9 20h6"/>
-            <circle cx="8" cy="16" r="1"/>
-            <circle cx="16" cy="16" r="1"/>
-          </svg>
+  <!-- Results -->
+  <dialog id="results-dialog" class="app-dialog" closedby="any">
+    <div class="dialog" style="max-width:680px">
+      <div class="dialog-head">
+        <div class="result-meta">
+          <span id="results-meta" class="role admin">Standard minutes</span>
+          <div>
+            <div id="results-title" style="font-size:18px;font-weight:600;letter-spacing:-0.01em">Synthesis result</div>
+            <span id="result-saved-time" class="hint mono">Saved to archive</span>
+          </div>
         </div>
-        <div class="brand-name auth-brand-name">
-          <span>Minutes</span><span class="gradient-text">.AI</span>
-        </div>
-        <p class="subtitle auth-subtitle">Sign in to your meeting synthesis profile.</p>
-      </div>
-
-      <form id="auth-form" class="flex-column auth-form">
-        <div class="form-group">
-          <label for="auth-username" class="auth-label">Username</label>
-          <input type="text" id="auth-username" class="glass-input" required placeholder="e.g. admin" autocomplete="username">
-        </div>
-        <div class="form-group">
-          <label for="auth-password" class="auth-label">Password</label>
-          <input type="password" id="auth-password" class="glass-input" required placeholder="••••••••" autocomplete="current-password">
-        </div>
-        <button type="submit" class="action-btn-primary w-full auth-submit-btn">
-          Authenticate Account
+        <button class="close-x dialog-close-btn" aria-label="Close dialog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
+      </div>
+      <div class="dialog-body">
+        <div id="results-markdown-rendered" class="markdown"></div>
+      </div>
+      <div class="dialog-foot">
+        <span class="hint mono">Saved locally</span>
+        <button id="btn-save-close" class="btn btn-primary btn-sm">Done</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Create user -->
+  <dialog id="create-user-dialog" class="app-dialog">
+    <div class="dialog" style="max-width:480px">
+      <div class="dialog-head">
+        <h2 id="create-user-title">Add user</h2>
+        <button class="close-x" id="btn-close-create-user" aria-label="Close dialog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form id="create-user-form" class="dialog-body">
+        <div class="form-row">
+          <label for="create-username">Username</label>
+          <input type="text" id="create-username" class="input" required placeholder="e.g. stephan" autocomplete="off">
+          <span class="hint">3+ characters; letters, numbers, _ or - only.</span>
+        </div>
+        <div class="form-row">
+          <label for="create-password">Initial password</label>
+          <input type="password" id="create-password" class="input" required placeholder="••••••••" autocomplete="new-password">
+          <span class="hint">At least 4 characters.</span>
+        </div>
+        <div class="form-row">
+          <label for="create-role">Role</label>
+          <select id="create-role" class="select" style="max-width:none;width:100%">
+            <option value="user" selected>Standard user — workspace only</option>
+            <option value="admin">Administrator — full access &amp; user management</option>
+          </select>
+        </div>
       </form>
+      <div class="dialog-foot">
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-cancel-create-user">Cancel</button>
+        <button type="submit" form="create-user-form" class="btn btn-primary btn-sm">Create user</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ==================== AUTH ==================== -->
+  <div id="auth-overlay" class="auth-overlay" style="display:flex">
+    <div class="auth-wrap">
+      <div class="auth-left">
+        <div class="brand">
+          <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" stroke-width="2" stroke-linecap="round"><line x1="6" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="6" y1="16" x2="13" y2="16"/></svg></div>
+          <div class="wordmark"><b>Minutes</b><span class="dot">.</span><span class="ai">AI</span></div>
+        </div>
+        <h1 class="auth-hero">Turn meetings into <span class="accent">minutes.</span></h1>
+        <div class="auth-foot"><span>Privacy-first</span><span>On-device or cloud AI</span><span>v2.0</span></div>
+      </div>
+      <div class="auth-right">
+        <div class="auth-card">
+          <h2>Sign in</h2>
+          <p class="sub">Welcome back. Enter your credentials to continue.</p>
+          <form id="auth-form">
+            <div class="form-row">
+              <label for="auth-username">Username</label>
+              <input type="text" id="auth-username" class="input" required placeholder="e.g. admin" autocomplete="username">
+            </div>
+            <div class="form-row">
+              <label for="auth-password">Password</label>
+              <input type="password" id="auth-password" class="input" required placeholder="••••••••" autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-primary">Sign in</button>
+          </form>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Create User Overlay Modal Dialog -->
-  <dialog id="create-user-dialog" class="glass-dialog">
-    <div class="dialog-header border-b">
-      <div class="flex-column">
-        <h2 id="create-user-title">Register New Operator</h2>
-      </div>
-      <button class="dialog-close-btn" id="btn-close-create-user" aria-label="Close dialog">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"/>
-          <line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
-    </div>
-    
-    <form id="create-user-form" class="dialog-body flex-column" style="gap: 1.25rem; padding: 1.5rem;">
-      <div class="form-group">
-        <label for="create-username">Username</label>
-        <input type="text" id="create-username" class="glass-input" required placeholder="e.g. stephan" autocomplete="off">
-        <p class="field-hint">Usernames must be unique and alphanumeric.</p>
-      </div>
-      <div class="form-group">
-        <label for="create-password">Initial Password</label>
-        <input type="password" id="create-password" class="glass-input" required placeholder="••••••••" autocomplete="new-password">
-        <p class="field-hint">Provide a strong starting key of at least 4 characters.</p>
-      </div>
-      <div class="form-group">
-        <label for="create-role">Access Role</label>
-        <select id="create-role" class="glass-select">
-          <option value="user" selected>Standard User (Workspace Only)</option>
-          <option value="admin">Administrator (Full Access & User Management)</option>
-        </select>
-        <p class="field-hint">Administrators can add/remove users and reset passcodes.</p>
-      </div>
-    </form>
-    
-    <div class="dialog-footer border-t" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
-      <button type="button" class="action-btn-secondary" id="btn-cancel-create-user">Cancel</button>
-      <button type="submit" form="create-user-form" class="action-btn-primary">Register Account</button>
-    </div>
-  </dialog>
-
-  <!-- Toast Notification Wrapper -->
   <div id="toast-container" class="toast-container"></div>
 
-  <!-- Main script logic module -->
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
