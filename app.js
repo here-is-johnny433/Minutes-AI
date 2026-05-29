@@ -1100,7 +1100,7 @@ Structure it with:
     });
   }
 
-  async function transcribeAudioWithGemini(blob, mime, langName) {
+  async function transcribeAudioWithGemini(blob, mime, langName, context) {
     if (!state.apiKey) {
       throw new Error("No Gemini API key configured in Settings");
     }
@@ -1115,7 +1115,12 @@ Structure it with:
     const base64 = btoa(binary);
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${state.apiKey}`;
-    const prompt = `Transcribe this audio recording verbatim${langName ? ' (spoken language: ' + langName + ')' : ''}. Output only the raw transcript text, no commentary, no timestamps, no speaker labels unless they are obvious from explicit name introductions. Preserve proper nouns, brand names, and technical terms accurately. Do not summarize, do not paraphrase, do not skip filler words if they carry meaning.`;
+    // Context biasing: feeding the meeting title + notes helps Gemini get
+    // proper nouns, names, and domain terms right (a standard ASR technique).
+    const contextBlock = context && context.trim()
+      ? `\n\nContext to help with proper nouns, names, companies, and jargon (these terms may appear in the audio — spell them correctly when you hear them, but do NOT inject them if they aren't actually spoken):\n"""${context.trim().slice(0, 2000)}"""`
+      : '';
+    const prompt = `Transcribe this audio recording verbatim${langName ? ' (spoken language: ' + langName + ')' : ''}. Output only the raw transcript text, no commentary, no timestamps, no speaker labels unless they are obvious from explicit name introductions. Preserve proper nouns, brand names, and technical terms accurately. Do not summarize, do not paraphrase, do not skip filler words if they carry meaning.${contextBlock}`;
 
     const r = await fetch(url, {
       method: 'POST',
@@ -1162,7 +1167,12 @@ Structure it with:
     elements.micToggleBtn.disabled = true;
     try {
       const langName = elements.dictationLangSelect && elements.dictationLangSelect.options[elements.dictationLangSelect.selectedIndex] && elements.dictationLangSelect.options[elements.dictationLangSelect.selectedIndex].text;
-      const transcript = await transcribeAudioWithGemini(captured.blob, captured.mime, langName);
+      // Bias transcription with the meeting title + any notes the user typed,
+      // so proper nouns and domain terms come out correct.
+      const titleCtx = (elements.meetingTitle && elements.meetingTitle.value || '').trim();
+      const notesCtx = (elements.notesInput && elements.notesInput.value || '').trim();
+      const context = [titleCtx, notesCtx].filter(Boolean).join('\n');
+      const transcript = await transcribeAudioWithGemini(captured.blob, captured.mime, langName, context);
       // Append to any text already in the box rather than clobbering it
       const existing = elements.transcriptInput.value.trim();
       elements.transcriptInput.value = existing ? (existing + '\n\n' + transcript) : transcript;
