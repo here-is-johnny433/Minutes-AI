@@ -347,17 +347,23 @@ h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.025em; line-height: 1
 /* ============================================================
    DIALOGS / AUTH
    ============================================================ */
-.overlay {
-  position: fixed; inset: 0; background: rgba(26,25,21,0.28); z-index: 100;
-  display: flex; align-items: center; justify-content: center; padding: 40px;
+/* Native <dialog> (showModal) — reset UA chrome, become a full-viewport
+   centering layer so the inner .dialog card floats in the middle. */
+dialog.app-dialog {
+  border: none; padding: 0; margin: 0; background: transparent;
+  max-width: 100vw; max-height: 100vh; width: 100%; height: 100%;
+  overflow: visible; color: var(--ink);
 }
-.overlay[hidden] { display: none; }
-dialog.overlay { border: none; max-width: none; max-height: none; width: 100%; height: 100%; }
-dialog.overlay::backdrop { background: rgba(26,25,21,0.28); }
+dialog.app-dialog:not([open]) { display: none; }
+dialog.app-dialog[open] { display: flex; align-items: center; justify-content: center; padding: 32px; }
+dialog.app-dialog::backdrop { background: rgba(26,25,21,0.32); backdrop-filter: blur(2px); }
+dialog.app-dialog > .dialog { animation: dialog-pop .22s cubic-bezier(0.16,1,0.3,1); }
+@keyframes dialog-pop { from { opacity: 0; transform: translateY(10px) scale(0.99); } to { opacity: 1; transform: none; } }
+
 .dialog {
   background: var(--card); border: 1px solid var(--line); border-radius: 14px;
   box-shadow: 0 24px 70px rgba(0,0,0,0.18); width: 100%; max-width: 560px;
-  display: flex; flex-direction: column; overflow: hidden; max-height: 88vh;
+  display: flex; flex-direction: column; overflow: hidden; max-height: 86vh;
 }
 .dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 26px 28px; border-bottom: 1px solid var(--line); }
 .dialog-body { padding: 26px 28px; overflow-y: auto; }
