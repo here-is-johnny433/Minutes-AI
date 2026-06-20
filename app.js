@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     currentUser: null,
     meetings: [],
     inputMethod: 'microphone', // 'text' | 'microphone' | 'audio-file' | 'text-file'
-    audioFile: { name: '', size: '', mimeType: '', base64: '' },
+    audioFile: { name: '', size: '', mimeType: '', file: null },
     textFile: { name: '', size: '' },
     audioLang: localStorage.getItem('minutae_audio_lang') || 'en-US',
     
@@ -339,59 +339,39 @@ Structure it with:
       }
     });
 
-    // Audio file analyzer and state processor
+    // Audio file analyzer and state processor.
+    // We keep the raw File object and defer any reading/compression until
+    // synthesis time — large files (100MB+) are compressed on the server and
+    // uploaded to Gemini via the Files API rather than base64-inlined.
     function handleAudioFileSelect(file) {
       if (!file.type.startsWith('audio/')) {
         showToast("Invalid file type. Please upload an audio file.", "error");
         return;
       }
 
-      // Max file size: 25MB
-      const maxSizeBytes = 25 * 1024 * 1024;
+      // Generous cap — server-side compression + Gemini Files API handle big files
+      const maxSizeBytes = 2 * 1024 * 1024 * 1024; // 2 GB
       if (file.size > maxSizeBytes) {
-        showToast("Audio file exceeds maximum size of 25MB.", "error");
+        showToast("Audio file exceeds the 2GB maximum.", "error");
         return;
       }
 
-      // Initialize loader UI
       elements.audioFilename.textContent = file.name;
       elements.audioFilesize.textContent = (file.size / (1024 * 1024)).toFixed(2) + " MB";
 
-      const reader = new FileReader();
-      
-      reader.onloadstart = () => {
-        dropzone.style.opacity = '0.5';
-        showToast("Processing audio file...", "info");
+      state.audioFile = {
+        name: file.name,
+        size: file.size,
+        mimeType: file.type || 'audio/mpeg',
+        file: file
       };
 
-      reader.onload = (event) => {
-        const dataUrl = event.target.result;
-        const base64Data = dataUrl.split(',')[1];
-        
-        state.audioFile = {
-          name: file.name,
-          size: file.size,
-          mimeType: file.type,
-          base64: base64Data
-        };
-
-        // Bind to player
-        elements.audioPlayer.src = URL.createObjectURL(file);
-        
-        // Toggle view from dropzone to active audio details
-        dropzone.style.display = 'none';
-        elements.audioFileDetails.style.display = 'block';
-        dropzone.style.opacity = '1';
-        showToast("Audio file processed successfully!", "success");
-      };
-
-      reader.onerror = (err) => {
-        console.error("FileReader error", err);
-        dropzone.style.opacity = '1';
-        showToast("Failed to read audio file.", "error");
-      };
-
-      reader.readAsDataURL(file);
+      elements.audioPlayer.src = URL.createObjectURL(file);
+      dropzone.style.display = 'none';
+      elements.audioFileDetails.style.display = 'block';
+      dropzone.style.opacity = '1';
+      const bigNote = file.size > 15 * 1024 * 1024 ? " (will be compressed on synthesis)" : "";
+      showToast("Audio file ready" + bigNote + ".", "success");
     }
 
     // Wipe audio upload state
@@ -399,7 +379,7 @@ Structure it with:
       e.stopPropagation();
       
       // Wipe state
-      state.audioFile = { name: '', size: '', mimeType: '', base64: '' };
+      state.audioFile = { name: '', size: '', mimeType: '', file: null };
       
       // Reset HTML controls
       elements.audioPlayer.src = '';
@@ -1116,21 +1096,107 @@ Structure it with:
     });
   }
 
-  async function transcribeAudioWithGemini(blob, mime, langName, context) {
-    if (!state.apiKey) {
-      throw new Error("No Gemini API key configured in Settings");
-    }
-    // base64 encode the audio
-    const arrayBuffer = await blob.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = '';
-    const chunkSize = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-    }
-    const base64 = btoa(binary);
+  // ==========================================
+  // GEMINI AUDIO MEDIA PREP (inline ↔ compress + Files API)
+  // ==========================================
+  // Files inlined as base64 must keep the whole request under ~20MB. Past
+  // that we compress on the server and upload via the Gemini Files API
+  // (resumable, up to 2GB). The API key never leaves the browser.
+  const GEMINI_INLINE_LIMIT = 15 * 1024 * 1024; // ~15MB raw → safe under the 20MB inline cap
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${state.apiKey}`;
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1]);
+      reader.onerror = () => reject(reader.error || new Error('read failed'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // Stream a big file to our server's ffmpeg endpoint; returns a small Opus blob.
+  function compressAudioOnServer(fileOrBlob, mime, signal, setStatus) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/compress');
+      xhr.responseType = 'blob';
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && setStatus) setStatus(`Uploading audio to server… ${Math.round((e.loaded / e.total) * 100)}%`);
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve({ blob: xhr.response, mime: xhr.getResponseHeader('Content-Type') || 'audio/ogg' });
+        } else {
+          reject(new Error('Server compression failed (HTTP ' + xhr.status + ')'));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Network error during compression'));
+      if (signal) signal.addEventListener('abort', () => xhr.abort());
+      xhr.send(fileOrBlob);
+    });
+  }
+
+  // Resumable upload to the Gemini Files API; returns a fileData part.
+  async function uploadGeminiFile(blob, mime, displayName, signal, setStatus) {
+    if (!state.apiKey) throw new Error("No Gemini API key configured in Settings");
+    const key = state.apiKey;
+    setStatus && setStatus('Starting upload to Gemini…');
+    const startRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${key}`, {
+      method: 'POST',
+      headers: {
+        'X-Goog-Upload-Protocol': 'resumable',
+        'X-Goog-Upload-Command': 'start',
+        'X-Goog-Upload-Header-Content-Length': String(blob.size),
+        'X-Goog-Upload-Header-Content-Type': mime,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ file: { display_name: displayName || 'meeting-audio' } }),
+      signal
+    });
+    if (!startRes.ok) throw new Error('Gemini Files API start failed (HTTP ' + startRes.status + ')');
+    const uploadUrl = startRes.headers.get('X-Goog-Upload-URL');
+    if (!uploadUrl) throw new Error('Gemini did not return an upload URL');
+
+    setStatus && setStatus('Uploading to Gemini…');
+    const upRes = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: { 'X-Goog-Upload-Offset': '0', 'X-Goog-Upload-Command': 'upload, finalize' },
+      body: blob,
+      signal
+    });
+    if (!upRes.ok) throw new Error('Gemini Files API upload failed (HTTP ' + upRes.status + ')');
+    let file = (await upRes.json()).file;
+
+    // Poll until the file finishes processing
+    setStatus && setStatus('Gemini is processing the audio…');
+    let tries = 0;
+    while (file && file.state === 'PROCESSING' && tries < 150) {
+      await waitMs(2000);
+      tries++;
+      const pr = await fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${key}`, { signal });
+      if (!pr.ok) throw new Error('Gemini file status check failed (HTTP ' + pr.status + ')');
+      file = await pr.json();
+    }
+    if (!file || file.state !== 'ACTIVE') throw new Error('Gemini file did not become ready (state: ' + (file && file.state) + ')');
+    return { fileData: { mimeType: file.mimeType || mime, fileUri: file.uri } };
+  }
+
+  // Returns a Gemini "part" for the audio — inline for small, Files API for big.
+  async function prepareGeminiAudio(fileOrBlob, mime, signal, setStatus) {
+    if (fileOrBlob.size <= GEMINI_INLINE_LIMIT) {
+      const base64 = await blobToBase64(fileOrBlob);
+      return { inlineData: { mimeType: mime, data: base64 } };
+    }
+    setStatus && setStatus('Compressing audio on the server…');
+    const compressed = await compressAudioOnServer(fileOrBlob, mime, signal, setStatus);
+    return await uploadGeminiFile(compressed.blob, compressed.mime, 'meeting-audio', signal, setStatus);
+  }
+
+  async function transcribeAudioWithGemini(blob, mime, langName, context) {
+    if (!state.apiKey) throw new Error("No Gemini API key configured in Settings");
+    const setStatus = (s) => { if (elements.recordingStatus) elements.recordingStatus.textContent = s; };
+    const media = await prepareGeminiAudio(blob, mime, null, setStatus);
+
     // Context biasing: feeding the meeting title + notes helps Gemini get
     // proper nouns, names, and domain terms right (a standard ASR technique).
     const contextBlock = context && context.trim()
@@ -1138,27 +1204,7 @@ Structure it with:
       : '';
     const prompt = `Transcribe this audio recording verbatim${langName ? ' (spoken language: ' + langName + ')' : ''}. Output only the raw transcript text, no commentary, no timestamps, no speaker labels unless they are obvious from explicit name introductions. Preserve proper nouns, brand names, and technical terms accurately. Do not summarize, do not paraphrase, do not skip filler words if they carry meaning.${contextBlock}`;
 
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { inlineData: { mimeType: mime, data: base64 } },
-            { text: prompt }
-          ]
-        }]
-      })
-    });
-
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      throw new Error(err && err.error && err.error.message ? err.error.message : ('HTTP ' + r.status));
-    }
-    const data = await r.json();
-    const text = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text;
-    if (!text) throw new Error("Empty transcript returned from Gemini");
-    return String(text).trim();
+    return await runCloudGeminiGeneration(prompt, null, media);
   }
 
   async function transcribeAndApplyCapturedAudio(captured) {
@@ -1282,7 +1328,7 @@ Structure it with:
     elements.meetingTitle.value = '';
     elements.transcriptInput.value = '';
     elements.notesInput.value = '';
-    if (state.audioFile && state.audioFile.base64 && elements.btnRemoveAudio) elements.btnRemoveAudio.click();
+    if (state.audioFile && state.audioFile.file && elements.btnRemoveAudio) elements.btnRemoveAudio.click();
     if (state.textFile && state.textFile.name && elements.btnRemoveText) elements.btnRemoveText.click();
   }
 
@@ -1403,7 +1449,7 @@ Structure it with:
     
     // Validation based on input method
     if (state.inputMethod === 'audio-file') {
-      if (!state.audioFile.base64) {
+      if (!state.audioFile.file) {
         showToast("Please upload an audio file first.", "error");
         return;
       }
@@ -1506,11 +1552,19 @@ Structure it with:
       updateProgressDialogState(3);
 
       if (state.activeEngine === 'cloud-gemini') {
-        summaryResult = await runCloudGeminiGeneration(
-          fullPrompt, 
-          cancelController.signal, 
-          state.inputMethod === 'audio-file' ? state.audioFile : null
-        );
+        let mediaPart = null;
+        if (state.inputMethod === 'audio-file') {
+          // Inline small files; compress + Files-API for large ones
+          mediaPart = await prepareGeminiAudio(
+            state.audioFile.file,
+            state.audioFile.mimeType,
+            cancelController.signal,
+            setGenStatus
+          );
+          if (isCancelled) return;
+          setGenStatus('Synthesizing with selected template…');
+        }
+        summaryResult = await runCloudGeminiGeneration(fullPrompt, cancelController.signal, mediaPart);
       } else {
         summaryResult = await runLocalGeminiNanoGeneration(fullPrompt, cancelController.signal);
       }
@@ -1558,21 +1612,14 @@ Structure it with:
   });
 
   // Cloud Gemini REST Client
-  async function runCloudGeminiGeneration(prompt, signal, audioFile = null) {
+  // `media` is a prebuilt Gemini part: { inlineData: {...} } or { fileData: {...} },
+  // produced by prepareGeminiAudio(). Null for text-only generations.
+  async function runCloudGeminiGeneration(prompt, signal, media = null) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${state.apiKey}`;
-    
+
     const parts = [];
-    if (audioFile && audioFile.base64) {
-      parts.push({
-        inlineData: {
-          mimeType: audioFile.mimeType,
-          data: audioFile.base64
-        }
-      });
-    }
-    parts.push({
-      text: prompt
-    });
+    if (media) parts.push(media);
+    parts.push({ text: prompt });
 
     const response = await fetch(url, {
       method: 'POST',
@@ -1635,6 +1682,12 @@ Structure it with:
 
   function waitMs(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // Update the generating dialog's sub-status line (compression/upload progress)
+  function setGenStatus(text) {
+    const el = document.getElementById('gen-substatus');
+    if (el) el.textContent = text;
   }
 
   // ==========================================

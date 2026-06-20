@@ -14,6 +14,8 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
+const { spawn } = require('child_process');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -252,6 +254,52 @@ async function findFileById(userDir, id) {
 
 // Health probe (no auth)
 app.get('/api/health', (_, res) => res.json({ ok: true, dataDir: DATA_DIR }));
+
+// ---- Audio compression (ffmpeg) ----
+// Accepts a raw audio stream (application/octet-stream), re-encodes it to a
+// small mono Opus file, and streams it back. Lets the browser shrink large
+// meeting recordings before uploading them to Gemini. Auth-gated; the key
+// never touches the server — only the bytes do.
+app.post('/api/compress', requireAuth, (req, res) => {
+  const id = crypto.randomBytes(8).toString('hex');
+  const inPath = path.join(os.tmpdir(), `mai-in-${id}`);
+  const outPath = path.join(os.tmpdir(), `mai-out-${id}.ogg`);
+  const cleanup = () => { fsSync.unlink(inPath, () => {}); fsSync.unlink(outPath, () => {}); };
+
+  const ws = fsSync.createWriteStream(inPath);
+  ws.on('error', (e) => {
+    console.error('compress write error', e);
+    cleanup();
+    if (!res.headersSent) res.status(500).json({ error: 'upload write failed' });
+  });
+  ws.on('finish', () => {
+    // mono, Opus @ 24kbps, voip profile — excellent for speech, tiny output
+    const ff = spawn('ffmpeg', ['-y', '-i', inPath, '-vn', '-ac', '1', '-c:a', 'libopus', '-b:a', '24k', '-application', 'voip', outPath]);
+    let errLog = '';
+    ff.stderr.on('data', (d) => { errLog += d.toString(); });
+    ff.on('error', (e) => {
+      console.error('ffmpeg spawn failed', e);
+      cleanup();
+      if (!res.headersSent) res.status(500).json({ error: 'ffmpeg unavailable: ' + e.message });
+    });
+    ff.on('close', (code) => {
+      if (code !== 0) {
+        console.error('ffmpeg exit', code, errLog.slice(-600));
+        cleanup();
+        if (!res.headersSent) res.status(500).json({ error: 'compression failed' });
+        return;
+      }
+      res.setHeader('Content-Type', 'audio/ogg');
+      const rs = fsSync.createReadStream(outPath);
+      rs.on('error', () => { cleanup(); if (!res.headersSent) res.status(500).end(); });
+      res.on('close', cleanup);
+      rs.pipe(res);
+    });
+  });
+
+  req.on('error', () => { cleanup(); });
+  req.pipe(ws);
+});
 
 // ---- Auth endpoints ----
 app.post('/api/auth/login', async (req, res) => {

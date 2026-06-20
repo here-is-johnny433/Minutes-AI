@@ -1,5 +1,8 @@
 FROM node:20-alpine
 
+# ffmpeg powers /api/compress (re-encodes large audio to small mono Opus)
+RUN apk add --no-cache ffmpeg
+
 WORKDIR /app
 
 # Install deps in a separate layer so source-only changes don't bust the cache

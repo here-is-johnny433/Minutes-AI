@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
 
@@ -160,7 +160,7 @@
                 <div id="audio-dropzone" class="audio-dropzone">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="dropzone-icon"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
                   <h3>Drag &amp; drop an audio file</h3>
-                  <p class="dropzone-text">Supports .mp3, .wav, .m4a, .webm, .ogg (max 25MB)</p>
+                  <p class="dropzone-text">Supports .mp3, .wav, .m4a, .webm, .ogg — large files are compressed automatically</p>
                   <span class="accent-link">or browse files</span>
                   <input type="file" id="audio-file-upload" accept="audio/*" style="display:none">
                 </div>
@@ -421,7 +421,7 @@ The AI combines these with the transcript to resolve context gaps, highlight key
       <div class="dialog-body gen">
         <div class="ring"></div>
         <h2>Synthesizing minutes</h2>
-        <p>Merging your transcript and notes into a structured summary…</p>
+        <p id="gen-substatus">Merging your transcript and notes into a structured summary…</p>
         <div class="log">
           <div class="log-item" id="log-step-1"><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span class="log-text">Formatting raw transcript</span></div>
           <div class="log-item" id="log-step-2"><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span class="log-text">Analyzing notes for context</span></div>
@@ -526,6 +526,6 @@ The AI combines these with the transcript to resolve context gaps, highlight key
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
