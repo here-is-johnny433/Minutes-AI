@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
 
@@ -294,7 +294,7 @@ The AI combines these with the transcript to resolve context gaps, highlight key
         <div class="canvas">
           <table class="table">
             <thead>
-              <tr><th>User</th><th>Role</th><th>Created</th><th>Actions</th></tr>
+              <tr><th>User</th><th>Role</th><th>Language</th><th>Created</th><th>Actions</th></tr>
             </thead>
             <tbody id="users-table-body"></tbody>
           </table>
@@ -353,6 +353,24 @@ The AI combines these with the transcript to resolve context gaps, highlight key
                     </div>
                     <button id="btn-trigger-model-download" class="btn btn-ghost btn-sm" style="display:none">Initialize model download</button>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Language -->
+            <div class="set-block">
+              <span class="eyebrow">Preferences</span>
+              <h2>Language</h2>
+              <p class="blurb">Your default language for synthesized minutes and dictation.</p>
+              <div class="set-card">
+                <div class="form-row">
+                  <label for="user-language-select">Language</label>
+                  <select id="user-language-select" class="select" style="max-width:none;width:100%">
+                    <option value="en">English</option>
+                    <option value="es">Spanish</option>
+                    <option value="de">German</option>
+                  </select>
+                  <span class="hint">Applied to new meetings. Admins can also set this per user in the Users page.</span>
                 </div>
               </div>
             </div>
@@ -453,7 +471,13 @@ The AI combines these with the transcript to resolve context gaps, highlight key
       </div>
       <div class="dialog-foot">
         <span class="hint mono">Saved locally</span>
-        <button id="btn-save-close" class="btn btn-primary btn-sm">Done</button>
+        <div style="display:flex;gap:10px">
+          <button id="btn-download-md" class="btn btn-ghost btn-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download .md
+          </button>
+          <button id="btn-save-close" class="btn btn-primary btn-sm">Done</button>
+        </div>
       </div>
     </div>
   </dialog>
@@ -484,6 +508,15 @@ The AI combines these with the transcript to resolve context gaps, highlight key
             <option value="user" selected>Standard user — workspace only</option>
             <option value="admin">Administrator — full access &amp; user management</option>
           </select>
+        </div>
+        <div class="form-row">
+          <label for="create-language">Language</label>
+          <select id="create-language" class="select" style="max-width:none;width:100%">
+            <option value="en" selected>English</option>
+            <option value="es">Spanish</option>
+            <option value="de">German</option>
+          </select>
+          <span class="hint">Default language for this user's minutes.</span>
         </div>
       </form>
       <div class="dialog-foot">
@@ -526,6 +559,6 @@ The AI combines these with the transcript to resolve context gaps, highlight key
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

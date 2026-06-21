@@ -181,12 +181,18 @@ async function saveUsers(users) {
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.writeFile(USERS_FILE, JSON.stringify(users, null, 2));
 }
+function sanitizeLang(raw) {
+  const l = String(raw || '').toLowerCase().trim();
+  return (l === 'es' || l === 'de') ? l : 'en';
+}
+
 async function seedAdmin() {
   const users = await loadUsers();
   if (users.length === 0) {
     users.push({
       username: 'admin',
       role: 'admin',
+      language: 'en',
       passwordHash: hashPassword('admin123'),
       createdAt: new Date().toISOString().slice(0, 10)
     });
@@ -204,7 +210,7 @@ async function resolveSession(req) {
   const users = await loadUsers();
   const user = users.find((x) => x.username === payload.u);
   if (!user) return null; // user deleted since login
-  return { username: user.username, role: user.role };
+  return { username: user.username, role: user.role, language: sanitizeLang(user.language) };
 }
 
 // Middleware: require a valid session for everything it guards.
@@ -313,7 +319,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'invalid username or password' });
     }
     setSessionCookie(req, res, { u: user.username, exp: Date.now() + SESSION_TTL_MS });
-    res.json({ username: user.username, role: user.role });
+    res.json({ username: user.username, role: user.role, language: sanitizeLang(user.language) });
   } catch (e) {
     console.error('login failed', e);
     res.status(500).json({ error: 'login error' });
@@ -335,18 +341,19 @@ app.get('/api/auth/me', async (req, res) => {
 // ---- User management (admin only, except self password change) ----
 app.get('/api/users', requireAuth, requireAdmin, async (_, res) => {
   const users = await loadUsers();
-  res.json(users.map((u) => ({ username: u.username, role: u.role, createdAt: u.createdAt })));
+  res.json(users.map((u) => ({ username: u.username, role: u.role, language: sanitizeLang(u.language), createdAt: u.createdAt })));
 });
 
 app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
   const username = sanitizeUser(req.body && req.body.username);
   const password = req.body && req.body.password;
   const role = (req.body && req.body.role) === 'admin' ? 'admin' : 'operator';
+  const language = sanitizeLang(req.body && req.body.language);
   if (!username) return res.status(400).json({ error: 'invalid username (use letters, numbers, _ or -)' });
   if (!password || String(password).length < 4) return res.status(400).json({ error: 'password must be at least 4 characters' });
   const users = await loadUsers();
   if (users.some((u) => u.username === username)) return res.status(409).json({ error: 'username already exists' });
-  users.push({ username, role, passwordHash: hashPassword(password), createdAt: new Date().toISOString().slice(0, 10) });
+  users.push({ username, role, language, passwordHash: hashPassword(password), createdAt: new Date().toISOString().slice(0, 10) });
   await saveUsers(users);
   res.json({ ok: true });
 });
@@ -387,6 +394,21 @@ app.post('/api/users/:username/role', requireAuth, requireAdmin, async (req, res
   user.role = role;
   await saveUsers(users);
   res.json({ ok: true });
+});
+
+// Change a user's language — admins can change anyone; users only themselves
+app.post('/api/users/:username/language', requireAuth, async (req, res) => {
+  const target = sanitizeUser(req.params.username);
+  const language = sanitizeLang(req.body && req.body.language);
+  if (req.user.role !== 'admin' && req.user.username !== target) {
+    return res.status(403).json({ error: 'not allowed' });
+  }
+  const users = await loadUsers();
+  const user = users.find((u) => u.username === target);
+  if (!user) return res.status(404).json({ error: 'user not found' });
+  user.language = language;
+  await saveUsers(users);
+  res.json({ ok: true, language });
 });
 
 // Meetings scope middleware — identity now comes from the validated session

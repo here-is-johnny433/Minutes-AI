@@ -184,6 +184,7 @@ Structure it with:
     resultsMarkdown: document.getElementById('results-markdown-rendered'),
     resultSavedTime: document.getElementById('result-saved-time'),
     btnSaveClose: document.getElementById('btn-save-close'),
+    btnDownloadMd: document.getElementById('btn-download-md'),
     dialogCloseBtn: document.querySelector('.dialog-close-btn'),
     
     // Log items in Generating dialog
@@ -207,6 +208,8 @@ Structure it with:
     createUsername: document.getElementById('create-username'),
     createPassword: document.getElementById('create-password'),
     createRole: document.getElementById('create-role'),
+    createLanguage: document.getElementById('create-language'),
+    userLanguageSelect: document.getElementById('user-language-select'),
     btnCreateUserModal: document.getElementById('btn-create-user-modal'),
     btnCloseCreateUser: document.getElementById('btn-close-create-user'),
     btnCancelCreateUser: document.getElementById('btn-cancel-create-user'),
@@ -662,7 +665,29 @@ Structure it with:
     // Fill values
     elements.apiKeyInput.value = state.apiKey;
     elements.aiEngineSelect.value = state.activeEngine;
-    
+
+    // User language preference (self-service)
+    if (elements.userLanguageSelect) {
+      elements.userLanguageSelect.addEventListener('change', async (e) => {
+        const lang = e.target.value;
+        if (!state.currentUser) return;
+        try {
+          const r = await fetch('/api/users/' + encodeURIComponent(state.currentUser.username) + '/language', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ language: lang })
+          });
+          if (!r.ok) { const er = await r.json().catch(() => ({})); throw new Error(er.error || r.status); }
+          state.currentUser.language = lang;
+          applyUserLanguageDefaults(lang);
+          const label = { en: 'English', es: 'Spanish', de: 'German' }[lang] || lang;
+          showToast(`Language set to ${label}. New meetings will use it.`, "success");
+        } catch (err) {
+          showToast("Could not save language: " + err.message, "error");
+        }
+      });
+    }
+
     // Toggle view components depending on engine
     toggleEngineConfigVisibility(state.activeEngine);
     
@@ -1714,6 +1739,24 @@ Structure it with:
     switchView('archive');
   });
 
+  // Download the current meeting's minutes as a .md file
+  elements.btnDownloadMd.addEventListener('click', () => {
+    if (!activeMeetingDetails) return;
+    const m = activeMeetingDetails;
+    const md = `# ${m.title}\n\n_${m.date}_\n\n${m.summary || ''}\n`;
+    const slug = (m.title || 'meeting').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'meeting';
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${slug}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("Downloaded .md", "success");
+  });
+
   elements.dialogCloseBtn.addEventListener('click', () => {
     elements.resultsDialog.close();
   });
@@ -2003,6 +2046,7 @@ Structure it with:
       const password = elements.createPassword.value;
       // map the form's 'user' option to the server's 'operator' role
       const role = elements.createRole.value === 'admin' ? 'admin' : 'operator';
+      const language = elements.createLanguage ? elements.createLanguage.value : 'en';
       if (username.length < 3 || !/^[a-z0-9_-]+$/.test(username)) {
         showToast("Username: 3+ chars, letters/numbers/_/- only.", "error");
         return;
@@ -2015,7 +2059,7 @@ Structure it with:
         const r = await fetch('/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password, role })
+          body: JSON.stringify({ username, password, role, language })
         });
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
@@ -2035,10 +2079,25 @@ Structure it with:
     bootSession();
   }
 
+  // Map the user's language preference to a transcription/output locale
+  const LANG_TO_LOCALE = { en: 'en-US', es: 'es-MX', de: 'de-DE' };
+
+  // Apply the user's language as the default for new meetings: preselect the
+  // dictation + audio language pickers (which drive the AI output language).
+  function applyUserLanguageDefaults(lang) {
+    const locale = LANG_TO_LOCALE[lang] || 'en-US';
+    state.dictationLang = locale;
+    localStorage.setItem('minutae_dictation_lang', locale);
+    if (elements.dictationLangSelect) elements.dictationLangSelect.value = locale;
+    if (elements.audioLangSelect) elements.audioLangSelect.value = locale;
+    if (elements.userLanguageSelect) elements.userLanguageSelect.value = lang;
+  }
+
   // Bring the app into the logged-in state for the given identity.
   async function enterApp(me) {
-    state.currentUser = { username: me.username, role: me.role };
+    state.currentUser = { username: me.username, role: me.role, language: me.language || 'en' };
     toggleAdminUIElements(state.currentUser.role);
+    applyUserLanguageDefaults(state.currentUser.language);
     elements.authOverlay.style.display = 'none';
 
     // Fast paint from cache, then authoritative server list
@@ -2105,6 +2164,13 @@ Structure it with:
           </div>
         </td>
         <td><span class="${roleClass}">${roleLabel}</span></td>
+        <td>
+          <select class="select user-lang-select" data-username="${safeUsername}" aria-label="User language" style="padding:5px 26px 5px 10px;font-size:12px">
+            <option value="en"${(user.language || 'en') === 'en' ? ' selected' : ''}>English</option>
+            <option value="es"${user.language === 'es' ? ' selected' : ''}>Spanish</option>
+            <option value="de"${user.language === 'de' ? ' selected' : ''}>German</option>
+          </select>
+        </td>
         <td class="mono" style="color:var(--ink-3)">${esc(user.createdAt || 'N/A')}</td>
         <td>
           <div class="row-actions">
@@ -2123,12 +2189,33 @@ Structure it with:
         </td>
       `;
       row.querySelector('.btn-reset-password').addEventListener('click', () => resetOperatorPassword(user.username));
+      row.querySelector('.user-lang-select').addEventListener('change', (e) => setUserLanguage(user.username, e.target.value));
       if (!isSelf) {
         row.querySelector('.btn-toggle-role').addEventListener('click', () => toggleOperatorRole(user.username, user.role));
         row.querySelector('.btn-delete-user').addEventListener('click', () => deleteOperatorAccount(user.username));
       }
       elements.usersTableBody.appendChild(row);
     });
+  }
+
+  async function setUserLanguage(username, lang) {
+    try {
+      const r = await fetch('/api/users/' + encodeURIComponent(username) + '/language', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: lang })
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.status); }
+      const label = { en: 'English', es: 'Spanish', de: 'German' }[lang] || lang;
+      showToast(`${username}'s language set to ${label}.`, "success");
+      // If admin changed their own language here, reflect it immediately
+      if (state.currentUser && username === state.currentUser.username) {
+        state.currentUser.language = lang;
+        applyUserLanguageDefaults(lang);
+      }
+    } catch (e) {
+      showToast("Could not set language: " + e.message, "error");
+    }
   }
 
   async function resetOperatorPassword(username) {
