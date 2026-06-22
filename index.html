@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=6">
+  <link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
 
@@ -232,7 +232,8 @@ The AI combines these with the transcript to resolve context gaps, highlight key
             <div class="synth-left">
               <span class="field-label">Template</span>
               <select id="template-select" class="select">
-                <option value="standard">Standard chronological minutes</option>
+                <option value="standard">Standard minutes</option>
+                <option value="discovery">Discovery / consulting session</option>
                 <option value="action">Action items &amp; tasks</option>
                 <option value="executive">Executive brief</option>
                 <option value="technical">Engineering &amp; tech spec</option>
@@ -264,6 +265,7 @@ The AI combines these with the transcript to resolve context gaps, highlight key
             <select id="archive-filter-template" class="select">
               <option value="all">All templates</option>
               <option value="standard">Standard minutes</option>
+              <option value="discovery">Discovery / consulting</option>
               <option value="action">Action items</option>
               <option value="executive">Executive briefs</option>
               <option value="technical">Technical specs</option>
@@ -384,7 +386,8 @@ The AI combines these with the transcript to resolve context gaps, highlight key
                 <div class="form-row">
                   <label for="template-edit-select">Template to edit</label>
                   <select id="template-edit-select" class="select" style="max-width:none;width:100%">
-                    <option value="standard">Standard chronological minutes</option>
+                    <option value="standard">Standard minutes</option>
+                    <option value="discovery">Discovery / consulting session</option>
                     <option value="action">Action items &amp; tasks</option>
                     <option value="executive">Executive brief</option>
                     <option value="technical">Engineering &amp; tech spec</option>
@@ -559,6 +562,6 @@ The AI combines these with the transcript to resolve context gaps, highlight key
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

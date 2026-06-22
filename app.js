@@ -38,13 +38,32 @@ document.addEventListener('DOMContentLoaded', () => {
     templates: (() => {
       const defaults = {
         standard: {
-          name: "Standard Chronological Minutes",
-          prompt: `Create comprehensive, professional meeting minutes divided into the following sections:
-1. **Meeting Details**: Title, Date (from context), Attendees (deduct from conversation), Facilitator (deduct).
-2. **Executive Overview**: A robust paragraph summarizing the overall purpose and outcome of the meeting.
-3. **Chronological Discussion Summary**: Detailed bullet points summarizing what was discussed, who made what points, and arguments raised.
-4. **Decisions Made**: A clear, numbered list of all finalized decisions.
-5. **Next Steps / Action Items**: Bullet points listing clear tasks, who is responsible, and deadlines.`
+          name: "Standard Minutes",
+          prompt: `Create concise, professional meeting minutes. Be rigorous about NOT repeating the same point: each distinct idea, decision, or recommendation appears ONCE, in the single most relevant section. Group the discussion by THEME — never narrate the conversation turn-by-turn.
+
+Sections:
+1. **Meeting Details**: Title, date (from context), attendees and facilitator (deduce from the conversation).
+2. **Executive Summary**: One tight paragraph — purpose, context, and main outcome.
+3. **Key Discussion (by topic)**: Group related points under short topic headings. Summarize the substance with the fewest bullets that capture every distinct point. No duplicates, no play-by-play.
+4. **Proposals & Recommendations**: Any proposals, ideas, or recommendations raised — especially by advisors, consultants, or presenters — each stated once and clearly. Omit this section only if there were genuinely none.
+5. **Decisions Made**: Numbered list of finalized decisions only.
+6. **Next Steps / Action Items**: Each task once, with owner and deadline if mentioned.
+
+Write in the meeting's language. Start directly with the content — no preamble.`
+        },
+        discovery: {
+          name: "Discovery / Consulting Session",
+          prompt: `These are minutes of a discovery or consulting session. The most valuable output is what was LEARNED and what was PROPOSED — not a transcript. State each point once and group by theme; never repeat a point across sections.
+
+Sections:
+1. **Context**: Who met, the company/area, and the purpose of the session (1–3 lines).
+2. **Current State**: How things work today — key facts, processes, numbers, and systems — grouped by topic and deduplicated.
+3. **Pain Points & Risks**: The concrete problems, gaps, or risks that surfaced.
+4. **Proposals & Recommendations**: The advisor's/consultant's recommendations — the heart of the session. One clear item each, in priority order.
+5. **Decisions**: Anything actually decided (numbered). Omit if none.
+6. **Next Steps / Action Items**: Each task once, with owner and deadline if mentioned.
+
+Write in the meeting's language. Be concise.`
         },
         action: {
           name: "Action Items & Tasks Table",
