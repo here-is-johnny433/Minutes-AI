@@ -1226,14 +1226,21 @@ Structure it with:
   }
 
   // Returns a Gemini "part" for the audio — inline for small, Files API for big.
-  async function prepareGeminiAudio(fileOrBlob, mime, signal, setStatus) {
+  // onPhase(name) fires at 'inline' | 'upload-server' | 'upload-gemini' | 'processing'
+  // so the caller can advance the visible progress steps.
+  async function prepareGeminiAudio(fileOrBlob, mime, signal, setStatus, onPhase) {
     if (fileOrBlob.size <= GEMINI_INLINE_LIMIT) {
+      onPhase && onPhase('inline');
       const base64 = await blobToBase64(fileOrBlob);
       return { inlineData: { mimeType: mime, data: base64 } };
     }
+    onPhase && onPhase('upload-server');
     setStatus && setStatus('Compressing audio on the server…');
     const compressed = await compressAudioOnServer(fileOrBlob, mime, signal, setStatus);
-    return await uploadGeminiFile(compressed.blob, compressed.mime, 'meeting-audio', signal, setStatus);
+    onPhase && onPhase('upload-gemini');
+    const media = await uploadGeminiFile(compressed.blob, compressed.mime, 'meeting-audio', signal, setStatus);
+    onPhase && onPhase('processing');
+    return media;
   }
 
   async function transcribeAudioWithGemini(blob, mime, langName, context) {
@@ -1525,31 +1532,29 @@ Structure it with:
       return;
     }
 
-    // Initialize Loading overlay
+    // Initialize Loading overlay with steps matched to the actual pipeline
+    const isAudio = state.inputMethod === 'audio-file';
+    const isBigAudio = isAudio && state.audioFile.file && state.audioFile.file.size > GEMINI_INLINE_LIMIT;
     elements.generatingDialog.showModal();
+    setGenSteps(isAudio
+      ? ['Uploading audio to server', 'Uploading to Gemini', 'Processing audio & writing minutes', 'Saving to archive']
+      : ['Preparing transcript', 'Analyzing notes', 'Writing minutes with AI', 'Saving to archive']);
+    setGenStatus(isAudio ? 'Preparing your audio…' : 'Preparing…');
     updateProgressDialogState(0);
-    
+    startGenTimer();
+
     let isCancelled = false;
-    
+
     const cancelController = new AbortController();
     elements.btnCancelGeneration.onclick = () => {
       isCancelled = true;
       cancelController.abort();
+      stopGenTimer();
       elements.generatingDialog.close();
       showToast("Generation cancelled by user", "info");
     };
 
     try {
-      // Step 1 log: Format transcripts
-      await waitMs(700);
-      if (isCancelled) return;
-      updateProgressDialogState(1);
-
-      // Step 2 log: Merge handwritten notes
-      await waitMs(900);
-      if (isCancelled) return;
-      updateProgressDialogState(2);
-
       const template = state.templates[templateKey];
       let fullPrompt = "";
       
@@ -1591,31 +1596,43 @@ Structure it with:
       }
 
       let summaryResult = '';
-      
-      // Step 3 log: Summarizing with AI
-      updateProgressDialogState(3);
 
       if (state.activeEngine === 'cloud-gemini') {
         let mediaPart = null;
-        if (state.inputMethod === 'audio-file') {
-          // Inline small files; compress + Files-API for large ones
+        if (isAudio) {
+          // Drive the visible steps from real upload/processing milestones
+          const phaseToStep = { 'upload-server': 0, 'upload-gemini': 1, 'inline': 2, 'processing': 2 };
           mediaPart = await prepareGeminiAudio(
             state.audioFile.file,
             state.audioFile.mimeType,
             cancelController.signal,
-            setGenStatus
+            setGenStatus,
+            (phase) => updateProgressDialogState(phaseToStep[phase] != null ? phaseToStep[phase] : 2)
           );
           if (isCancelled) return;
-          setGenStatus('Synthesizing with selected template…');
+          updateProgressDialogState(2); // Processing audio & writing minutes
+          setGenStatus(isBigAudio
+            ? 'Gemini is transcribing and writing the minutes — this can take several minutes for long recordings…'
+            : 'Transcribing and writing the minutes…');
+        } else {
+          // Text / mic transcript: brief visual progression, then the AI call
+          updateProgressDialogState(0);
+          await waitMs(300);
+          updateProgressDialogState(1);
+          await waitMs(300);
+          updateProgressDialogState(2);
+          setGenStatus('Writing the minutes with AI…');
         }
         summaryResult = await runCloudGeminiGeneration(fullPrompt, cancelController.signal, mediaPart);
       } else {
+        updateProgressDialogState(2);
+        setGenStatus('Writing the minutes on-device…');
         summaryResult = await runLocalGeminiNanoGeneration(fullPrompt, cancelController.signal);
       }
 
       if (isCancelled) return;
-      updateProgressDialogState(4);
-      await waitMs(400);
+      updateProgressDialogState(3); // Saving to archive
+      setGenStatus('Saving to archive…');
 
       // Save to cache archive
       const newMeeting = {
@@ -1637,6 +1654,7 @@ Structure it with:
         showToast("Saved to cache, but could not sync to server: " + (err.message || err.name), "warning");
       }
 
+      stopGenTimer();
       elements.generatingDialog.close();
 
       // Wipe workspace so the user can start a new meeting cleanly
@@ -1648,6 +1666,7 @@ Structure it with:
 
     } catch (err) {
       console.error(err);
+      stopGenTimer();
       if (!isCancelled) {
         elements.generatingDialog.close();
         showToast("Generation failed: " + err.message, "error");
@@ -1732,6 +1751,37 @@ Structure it with:
   function setGenStatus(text) {
     const el = document.getElementById('gen-substatus');
     if (el) el.textContent = text;
+  }
+
+  // Relabel the progress steps for the current pipeline (audio vs text).
+  function setGenSteps(labels) {
+    elements.logSteps.forEach((step, idx) => {
+      const txt = step.querySelector('.log-text');
+      if (labels[idx]) {
+        step.style.display = '';
+        if (txt) txt.textContent = labels[idx];
+      } else {
+        step.style.display = 'none';
+      }
+    });
+  }
+
+  // Elapsed-time ticker so long Gemini calls visibly show progress.
+  function startGenTimer() {
+    const el = document.getElementById('gen-elapsed');
+    state.genStartTime = Date.now();
+    if (state.genTimerInterval) clearInterval(state.genTimerInterval);
+    const tick = () => {
+      if (!el) return;
+      const s = Math.floor((Date.now() - state.genStartTime) / 1000);
+      const m = Math.floor(s / 60);
+      el.textContent = `Transcurrido ${m}:${String(s % 60).padStart(2, '0')}`;
+    };
+    tick();
+    state.genTimerInterval = setInterval(tick, 1000);
+  }
+  function stopGenTimer() {
+    if (state.genTimerInterval) { clearInterval(state.genTimerInterval); state.genTimerInterval = null; }
   }
 
   // ==========================================

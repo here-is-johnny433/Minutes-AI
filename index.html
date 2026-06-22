@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=7">
+  <link rel="stylesheet" href="styles.css?v=8">
 </head>
 <body>
 
@@ -449,7 +449,8 @@ The AI combines these with the transcript to resolve context gaps, highlight key
           <div class="log-item" id="log-step-3"><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span class="log-text">Synthesizing with selected template</span></div>
           <div class="log-item" id="log-step-4"><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span class="log-text">Rendering final report</span></div>
         </div>
-        <button id="btn-cancel-generation" class="btn btn-ghost btn-sm" style="margin-top:22px">Cancel</button>
+        <div id="gen-elapsed" class="hint mono" style="margin-top:16px;min-height:16px"></div>
+        <button id="btn-cancel-generation" class="btn btn-ghost btn-sm" style="margin-top:14px">Cancel</button>
       </div>
     </div>
   </dialog>
@@ -562,6 +563,6 @@ The AI combines these with the transcript to resolve context gaps, highlight key
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="app.js?v=7"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>
