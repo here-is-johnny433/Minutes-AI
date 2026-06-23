@@ -76,6 +76,7 @@ function sanitizeUser(raw) {
 // ==========================================================================
 
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const TEMPLATES_FILE = path.join(DATA_DIR, 'templates.json');
 const SECRET_FILE = path.join(DATA_DIR, '.session_secret');
 
 // Session-signing secret: from env, else generated once and persisted so
@@ -198,6 +199,163 @@ async function seedAdmin() {
     });
     await saveUsers(users);
     console.log('[minutes-ai-api] seeded default admin (admin/admin123) — change the password!');
+  }
+}
+
+// ==========================================================================
+// TEMPLATE store (DATA_DIR/templates.json) — global, admin-managed library.
+// Shared by every user; only admins can create/edit/delete. Each record is
+// { id, name, prompt, createdAt }. Built-in ids (standard, action, …) are kept
+// stable so existing archived meetings keep resolving to a template name.
+// ==========================================================================
+const TPL_NAME_MAX = 80;
+const TPL_PROMPT_MAX = 12000;
+const TPL_NOTES_MAX = 8000;
+
+const DEFAULT_TEMPLATES = [
+  {
+    id: 'standard',
+    notesStructure: `**Attendees:**\n\n**Agenda:**\n\n**Notes:**\n`,
+    name: 'Standard Minutes',
+    prompt: `Create concise, professional meeting minutes. Be rigorous about NOT repeating the same point: each distinct idea, decision, or recommendation appears ONCE, in the single most relevant section. Group the discussion by THEME — never narrate the conversation turn-by-turn.
+
+Sections:
+1. **Meeting Details**: Title, date (from context), attendees and facilitator (deduce from the conversation).
+2. **Executive Summary**: One tight paragraph — purpose, context, and main outcome.
+3. **Key Discussion (by topic)**: Group related points under short topic headings. Summarize the substance with the fewest bullets that capture every distinct point. No duplicates, no play-by-play.
+4. **Proposals & Recommendations**: Any proposals, ideas, or recommendations raised — especially by advisors, consultants, or presenters — each stated once and clearly. Omit this section only if there were genuinely none.
+5. **Decisions Made**: Numbered list of finalized decisions only.
+6. **Next Steps / Action Items**: Each task once, with owner and deadline if mentioned.
+
+Write in the meeting's language. Start directly with the content — no preamble.`
+  },
+  {
+    id: 'discovery',
+    notesStructure: `**Client / Area:**\n\n**Goals for the session:**\n\n**Current state:**\n\n**Pain points:**\n\n**Ideas / recommendations:**\n`,
+    name: 'Discovery / Consulting Session',
+    prompt: `These are minutes of a discovery or consulting session. The most valuable output is what was LEARNED and what was PROPOSED — not a transcript. State each point once and group by theme; never repeat a point across sections.
+
+Sections:
+1. **Context**: Who met, the company/area, and the purpose of the session (1–3 lines).
+2. **Current State**: How things work today — key facts, processes, numbers, and systems — grouped by topic and deduplicated.
+3. **Pain Points & Risks**: The concrete problems, gaps, or risks that surfaced.
+4. **Proposals & Recommendations**: The advisor's/consultant's recommendations — the heart of the session. One clear item each, in priority order.
+5. **Decisions**: Anything actually decided (numbered). Omit if none.
+6. **Next Steps / Action Items**: Each task once, with owner and deadline if mentioned.
+
+Write in the meeting's language. Be concise.`
+  },
+  {
+    id: 'action',
+    notesStructure: `**Owners present:**\n\n**Tasks to capture:**\n\n**Deadlines mentioned:**\n`,
+    name: 'Action Items & Tasks Table',
+    prompt: `Synthesize the transcript and notes into a highly task-oriented summary. The focus must be 100% on execution.
+Generate a structured Markdown table summarizing the Action Items. The table must have exactly these columns:
+| Task / Deliverable | Owner | Deadline | Priority (High/Medium/Low) | Status/Description |
+
+Below the table, provide:
+1. **Critical Path Items**: A bulleted section describing the 3 most urgent roadblocks or tasks.
+2. **Dependencies & Risks**: Any items that depend on other tasks or have potential risks associated with them.`
+  },
+  {
+    id: 'executive',
+    notesStructure: `**Audience:**\n\n**Headline outcomes:**\n\n**Asks for leadership:**\n`,
+    name: 'Executive Brief (TL;DR)',
+    prompt: `Provide a high-level, ultra-polished Executive Brief designed for C-level leadership who did not attend the meeting.
+Structure it with:
+1. **TL;DR Highlights**: 3-4 bullet points outlining the highest-impact results.
+2. **Strategic Decisions**: Strategic choices made, and their business implications.
+3. **Key Progress / Status Updates**: Brief summary of project updates discussed.
+4. **Critical Asks / Needs**: Immediate needs or blockers that require leadership attention.
+Keep paragraphs brief, dense, and punchy.`
+  },
+  {
+    id: 'technical',
+    notesStructure: `**Systems / components:**\n\n**Decisions:**\n\n**Risks / open questions:**\n`,
+    name: 'Engineering & Tech Spec Summary',
+    prompt: `Synthesize this into a technical spec summary. Focus on engineering architecture, designs, and systems discussed.
+Structure it with:
+1. **Architecture & Technical Decisions**: System diagrams discussed, database schema modifications, or APIs changes.
+2. **Code & Implementation Notes**: Specific files, libraries, or technologies discussed.
+3. **Bug Reports & Issues Addressed**: Technical problems identified and resolutions agreed upon.
+4. **Testing & QA Actions**: Automated testing plans, manual QA scopes, and deployment steps.`
+  },
+  {
+    id: 'creative',
+    notesStructure: `**Theme:**\n\n**Ideas:**\n\n**Wild cards:**\n`,
+    name: 'Creative Concept Map',
+    prompt: `Synthesize this meeting into a conceptual outline showing the relationship of ideas and lateral brainstorming.
+Structure it with:
+1. **Core Theme / Anchor Idea**: The single central concept of the meeting.
+2. **Primary Conceptual Branches**: The major ideas explored, with hierarchical sub-bullets for supporting suggestions.
+3. **Tangential Explorations**: Ideas that were briefly touched upon but rejected or deferred (wildcard suggestions).
+4. **Inspirational Takeaways**: Creative summaries, analogies, or vision statements created during the meeting.`
+  }
+];
+
+function sanitizeTemplateId(raw) {
+  const s = String(raw || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '').slice(0, 64);
+  return s.length > 0 ? s : null;
+}
+
+// Derive a readable, unique id from a template name.
+function uniqueTemplateId(name, templates) {
+  const base = slug(name) || 'template';
+  const taken = new Set(templates.map((t) => t.id));
+  let id = base, n = 2;
+  while (taken.has(id)) id = `${base}-${n++}`;
+  return id;
+}
+
+async function loadTemplates() {
+  try {
+    const arr = JSON.parse(await fs.readFile(TEMPLATES_FILE, 'utf8'));
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    if (e.code === 'ENOENT') return [];
+    throw e;
+  }
+}
+
+async function saveTemplates(templates) {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.writeFile(TEMPLATES_FILE, JSON.stringify(templates, null, 2));
+}
+
+// Seed the built-in templates on first boot ONLY. If templates.json already
+// exists — even as an empty array because an admin deleted everything — we
+// respect that and never re-seed.
+async function seedTemplates() {
+  try {
+    await fs.access(TEMPLATES_FILE);
+    return;
+  } catch (e) { /* ENOENT → first boot, seed defaults */ }
+  const today = new Date().toISOString().slice(0, 10);
+  await saveTemplates(DEFAULT_TEMPLATES.map((t) => ({ ...t, createdAt: today })));
+  console.log('[minutes-ai-api] seeded default templates');
+}
+
+// Backfill the notesStructure field on templates created before it existed.
+// Only fills when the property is genuinely absent (never overwrites an admin's
+// value, including an intentionally-empty one). Built-ins get their default
+// scaffold by id; everything else gets an empty string.
+async function migrateTemplates() {
+  let templates;
+  try {
+    templates = await loadTemplates();
+  } catch (e) { return; }
+  if (!templates.length) return;
+  const defaultsById = Object.fromEntries(DEFAULT_TEMPLATES.map((t) => [t.id, t]));
+  let changed = false;
+  for (const t of templates) {
+    if (typeof t.notesStructure !== 'string') {
+      t.notesStructure = (defaultsById[t.id] && defaultsById[t.id].notesStructure) || '';
+      changed = true;
+    }
+  }
+  if (changed) {
+    await saveTemplates(templates);
+    console.log('[minutes-ai-api] migrated templates: added notesStructure');
   }
 }
 
@@ -411,6 +569,61 @@ app.post('/api/users/:username/language', requireAuth, async (req, res) => {
   res.json({ ok: true, language });
 });
 
+// ---- Template management (read: any user; write: admin only) ----
+app.get('/api/templates', requireAuth, async (_, res) => {
+  try {
+    res.json(await loadTemplates());
+  } catch (e) {
+    console.error('load templates failed', e);
+    res.status(500).json({ error: 'could not load templates' });
+  }
+});
+
+app.post('/api/templates', requireAuth, requireAdmin, async (req, res) => {
+  const name = String((req.body && req.body.name) || '').trim();
+  const prompt = String((req.body && req.body.prompt) || '').trim();
+  const notesStructure = String((req.body && req.body.notesStructure) || '');
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  if (name.length > TPL_NAME_MAX) return res.status(400).json({ error: `name must be ${TPL_NAME_MAX} characters or fewer` });
+  if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+  if (prompt.length > TPL_PROMPT_MAX) return res.status(400).json({ error: 'prompt is too long' });
+  if (notesStructure.length > TPL_NOTES_MAX) return res.status(400).json({ error: 'notes structure is too long' });
+  const templates = await loadTemplates();
+  const tpl = { id: uniqueTemplateId(name, templates), name, prompt, notesStructure, createdAt: new Date().toISOString().slice(0, 10) };
+  templates.push(tpl);
+  await saveTemplates(templates);
+  res.json(tpl);
+});
+
+app.put('/api/templates/:id', requireAuth, requireAdmin, async (req, res) => {
+  const id = sanitizeTemplateId(req.params.id);
+  const name = String((req.body && req.body.name) || '').trim();
+  const prompt = String((req.body && req.body.prompt) || '').trim();
+  const notesStructure = String((req.body && req.body.notesStructure) || '');
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  if (name.length > TPL_NAME_MAX) return res.status(400).json({ error: `name must be ${TPL_NAME_MAX} characters or fewer` });
+  if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+  if (prompt.length > TPL_PROMPT_MAX) return res.status(400).json({ error: 'prompt is too long' });
+  if (notesStructure.length > TPL_NOTES_MAX) return res.status(400).json({ error: 'notes structure is too long' });
+  const templates = await loadTemplates();
+  const tpl = templates.find((t) => t.id === id);
+  if (!tpl) return res.status(404).json({ error: 'template not found' });
+  tpl.name = name;
+  tpl.prompt = prompt;
+  tpl.notesStructure = notesStructure;
+  await saveTemplates(templates);
+  res.json(tpl);
+});
+
+app.delete('/api/templates/:id', requireAuth, requireAdmin, async (req, res) => {
+  const id = sanitizeTemplateId(req.params.id);
+  const templates = await loadTemplates();
+  const next = templates.filter((t) => t.id !== id);
+  if (next.length === templates.length) return res.status(404).json({ error: 'template not found' });
+  await saveTemplates(next);
+  res.json({ ok: true });
+});
+
 // Meetings scope middleware — identity now comes from the validated session
 // cookie. No valid session → 401. Role from the stored user record.
 app.use('/api/meetings', requireAuth, (req, res, next) => {
@@ -562,7 +775,12 @@ app.delete('/api/meetings', async (req, res) => {
   }
 });
 
-seedAdmin().catch((e) => console.error('seedAdmin failed', e)).finally(() => {
+Promise.all([
+  seedAdmin().catch((e) => console.error('seedAdmin failed', e)),
+  seedTemplates()
+    .then(() => migrateTemplates())
+    .catch((e) => console.error('seedTemplates failed', e))
+]).finally(() => {
   app.listen(PORT, () => {
     console.log(`[minutes-ai-api] listening on :${PORT}, data in ${DATA_DIR}`);
   });

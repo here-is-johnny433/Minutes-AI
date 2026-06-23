@@ -34,91 +34,10 @@ document.addEventListener('DOMContentLoaded', () => {
     localAISession: null,
     localModelAvailability: 'checking', // 'available' | 'downloadable' | 'downloading' | 'unsupported'
     
-    // Synthesize templates (initialized with defaults or customized overrides)
-    templates: (() => {
-      const defaults = {
-        standard: {
-          name: "Standard Minutes",
-          prompt: `Create concise, professional meeting minutes. Be rigorous about NOT repeating the same point: each distinct idea, decision, or recommendation appears ONCE, in the single most relevant section. Group the discussion by THEME — never narrate the conversation turn-by-turn.
-
-Sections:
-1. **Meeting Details**: Title, date (from context), attendees and facilitator (deduce from the conversation).
-2. **Executive Summary**: One tight paragraph — purpose, context, and main outcome.
-3. **Key Discussion (by topic)**: Group related points under short topic headings. Summarize the substance with the fewest bullets that capture every distinct point. No duplicates, no play-by-play.
-4. **Proposals & Recommendations**: Any proposals, ideas, or recommendations raised — especially by advisors, consultants, or presenters — each stated once and clearly. Omit this section only if there were genuinely none.
-5. **Decisions Made**: Numbered list of finalized decisions only.
-6. **Next Steps / Action Items**: Each task once, with owner and deadline if mentioned.
-
-Write in the meeting's language. Start directly with the content — no preamble.`
-        },
-        discovery: {
-          name: "Discovery / Consulting Session",
-          prompt: `These are minutes of a discovery or consulting session. The most valuable output is what was LEARNED and what was PROPOSED — not a transcript. State each point once and group by theme; never repeat a point across sections.
-
-Sections:
-1. **Context**: Who met, the company/area, and the purpose of the session (1–3 lines).
-2. **Current State**: How things work today — key facts, processes, numbers, and systems — grouped by topic and deduplicated.
-3. **Pain Points & Risks**: The concrete problems, gaps, or risks that surfaced.
-4. **Proposals & Recommendations**: The advisor's/consultant's recommendations — the heart of the session. One clear item each, in priority order.
-5. **Decisions**: Anything actually decided (numbered). Omit if none.
-6. **Next Steps / Action Items**: Each task once, with owner and deadline if mentioned.
-
-Write in the meeting's language. Be concise.`
-        },
-        action: {
-          name: "Action Items & Tasks Table",
-          prompt: `Synthesize the transcript and notes into a highly task-oriented summary. The focus must be 100% on execution.
-Generate a structured Markdown table summarizing the Action Items. The table must have exactly these columns:
-| Task / Deliverable | Owner | Deadline | Priority (High/Medium/Low) | Status/Description |
-
-Below the table, provide:
-1. **Critical Path Items**: A bulleted section describing the 3 most urgent roadblocks or tasks.
-2. **Dependencies & Risks**: Any items that depend on other tasks or have potential risks associated with them.`
-        },
-        executive: {
-          name: "Executive Brief (TL;DR)",
-          prompt: `Provide a high-level, ultra-polished Executive Brief designed for C-level leadership who did not attend the meeting.
-Structure it with:
-1. **TL;DR Highlights**: 3-4 bullet points outlining the highest-impact results.
-2. **Strategic Decisions**: Strategic choices made, and their business implications.
-3. **Key Progress / Status Updates**: Brief summary of project updates discussed.
-4. **Critical Asks / Needs**: Immediate needs or blockers that require leadership attention.
-Keep paragraphs brief, dense, and punchy.`
-        },
-        technical: {
-          name: "Engineering & Tech Spec Summary",
-          prompt: `Synthesize this into a technical spec summary. Focus on engineering architecture, designs, and systems discussed.
-Structure it with:
-1. **Architecture & Technical Decisions**: System diagrams discussed, database schema modifications, or APIs changes.
-2. **Code & Implementation Notes**: Specific files, libraries, or technologies discussed.
-3. **Bug Reports & Issues Addressed**: Technical problems identified and resolutions agreed upon.
-4. **Testing & QA Actions**: Automated testing plans, manual QA scopes, and deployment steps.`
-        },
-        creative: {
-          name: "Creative Concept Map",
-          prompt: `Synthesize this meeting into a conceptual outline showing the relationship of ideas and lateral brainstorming.
-Structure it with:
-1. **Core Theme / Anchor Idea**: The single central concept of the meeting.
-2. **Primary Conceptual Branches**: The major ideas explored, with hierarchical sub-bullets for supporting suggestions.
-3. **Tangential Explorations**: Ideas that were briefly touched upon but rejected or deferred (wildcard suggestions).
-4. **Inspirational Takeaways**: Creative summaries, analogies, or vision statements created during the meeting.`
-        }
-      };
-      
-      try {
-        const custom = JSON.parse(localStorage.getItem('minutae_custom_templates') || '{}');
-        const merged = { ...defaults };
-        for (const key in defaults) {
-          if (custom[key]) {
-            merged[key] = { ...defaults[key], ...custom[key] };
-          }
-        }
-        return merged;
-      } catch (e) {
-        console.error("Failed to parse custom templates", e);
-        return defaults;
-      }
-    })()
+    // Synthesize templates — loaded from the server (global, admin-managed).
+    // `templates` is a lookup map keyed by id; `templateList` keeps server order.
+    templates: {},
+    templateList: [],
   };
 
   // ==========================================
@@ -142,6 +61,7 @@ Structure it with:
     recordingTime: document.getElementById('recording-time'),
     dictationBar: document.querySelector('.dictation-bar'),
     templateSelect: document.getElementById('template-select'),
+    synthRecap: document.getElementById('synth-recap'),
     btnGenerate: document.getElementById('btn-generate'),
     dictationLangSelect: document.getElementById('dictation-lang-select'),
     captureSourceSelect: document.getElementById('capture-source-select'),
@@ -188,11 +108,17 @@ Structure it with:
     localDownloadPct: document.getElementById('local-download-pct'),
     btnClearArchive: document.getElementById('btn-clear-archive'),
     optionLocalAi: document.getElementById('option-local-ai'),
-    templateEditSelect: document.getElementById('template-edit-select'),
-    templateEditName: document.getElementById('template-edit-name'),
-    templateEditPrompt: document.getElementById('template-edit-prompt'),
-    btnSaveTemplate: document.getElementById('btn-save-template'),
-    btnResetTemplates: document.getElementById('btn-reset-templates'),
+    // Template manager (Settings → Templates)
+    templatesList: document.getElementById('templates-list'),
+    btnAddTemplate: document.getElementById('btn-add-template'),
+    templateDialog: document.getElementById('template-dialog'),
+    templateForm: document.getElementById('template-form'),
+    templateDialogTitle: document.getElementById('template-dialog-title'),
+    templateNameInput: document.getElementById('template-name-input'),
+    templatePromptInput: document.getElementById('template-prompt-input'),
+    templateNotesInput: document.getElementById('template-notes-input'),
+    btnCloseTemplate: document.getElementById('btn-close-template'),
+    btnCancelTemplate: document.getElementById('btn-cancel-template'),
     
     // Dialog Overlays
     generatingDialog: document.getElementById('generating-dialog'),
@@ -252,6 +178,7 @@ Structure it with:
         localStorage.setItem('minutae_audio_lang', selectedLang);
         const langName = elements.audioLangSelect.options[elements.audioLangSelect.selectedIndex].text;
         showToast(`Audio analysis language set to: ${langName}`, "info");
+        updateSynthRecap();
       });
     }
 
@@ -308,6 +235,8 @@ Structure it with:
           stopRecording();
         }
       }
+
+      updateSynthRecap();
     }
 
     // Initialize with default state
@@ -618,65 +547,231 @@ Structure it with:
     }
   }
 
+  // Pull the global, admin-managed template library from the server into state.
+  async function fetchTemplates() {
+    try {
+      const r = await fetch('/api/templates', { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const list = await r.json();
+      state.templateList = Array.isArray(list) ? list : [];
+    } catch (err) {
+      console.error('Failed to load templates', err);
+      state.templateList = [];
+    }
+    // Rebuild the id→template lookup map (insertion order matches the list).
+    state.templates = {};
+    state.templateList.forEach((t) => { state.templates[t.id] = t; });
+    return state.templateList;
+  }
+
   function refreshTemplateSelectors() {
     // Preserve selected values to avoid losing user selection
     const prevTemplateSelect = elements.templateSelect.value;
-    const prevTemplateEditSelect = elements.templateEditSelect.value;
     const prevArchiveFilterTemplate = elements.archiveFilterTemplate.value;
 
-    // 1. Refresh elements.templateSelect
+    // 1. Workspace template dropdown (step 02)
     elements.templateSelect.innerHTML = '';
-    for (const key in state.templates) {
+    state.templateList.forEach((t) => {
       const opt = document.createElement('option');
-      opt.value = key;
-      opt.textContent = state.templates[key].name;
+      opt.value = t.id;
+      opt.textContent = t.name;
       elements.templateSelect.appendChild(opt);
-    }
+    });
     if (state.templates[prevTemplateSelect]) {
       elements.templateSelect.value = prevTemplateSelect;
-    } else {
-      elements.templateSelect.value = 'standard';
+    } else if (state.templateList.length) {
+      elements.templateSelect.value = state.templateList[0].id;
     }
 
-    // 2. Refresh elements.templateEditSelect
-    elements.templateEditSelect.innerHTML = '';
-    for (const key in state.templates) {
-      const opt = document.createElement('option');
-      opt.value = key;
-      opt.textContent = state.templates[key].name;
-      elements.templateEditSelect.appendChild(opt);
-    }
-    if (state.templates[prevTemplateEditSelect]) {
-      elements.templateEditSelect.value = prevTemplateEditSelect;
-    } else {
-      elements.templateEditSelect.value = 'standard';
-    }
-
-    // 3. Refresh elements.archiveFilterTemplate
+    // 2. Archive template filter
     elements.archiveFilterTemplate.innerHTML = '';
     const allOpt = document.createElement('option');
     allOpt.value = 'all';
-    allOpt.textContent = 'All Templates';
+    allOpt.textContent = 'All templates';
     elements.archiveFilterTemplate.appendChild(allOpt);
-    
-    for (const key in state.templates) {
+    state.templateList.forEach((t) => {
       const opt = document.createElement('option');
-      opt.value = key;
-      opt.textContent = state.templates[key].name;
+      opt.value = t.id;
+      opt.textContent = t.name;
       elements.archiveFilterTemplate.appendChild(opt);
-    }
+    });
     if (prevArchiveFilterTemplate === 'all' || state.templates[prevArchiveFilterTemplate]) {
       elements.archiveFilterTemplate.value = prevArchiveFilterTemplate;
     } else {
       elements.archiveFilterTemplate.value = 'all';
     }
+
+    // 3. Settings manager + step-05 recap stay in sync
+    renderTemplatesManager();
+    updateSynthRecap();
   }
 
-  function loadTemplateToEditor(templateKey) {
-    const template = state.templates[templateKey];
-    if (template) {
-      elements.templateEditName.value = template.name;
-      elements.templateEditPrompt.value = template.prompt;
+  // Append the selected template's manual-notes scaffold to the notes field.
+  // Fired only on a user-initiated template change (not programmatic value sets).
+  function appendNotesStructure(templateId) {
+    const tpl = state.templates[templateId];
+    if (!tpl || !tpl.notesStructure) return;
+    const ta = elements.notesInput;
+    if (!ta) return;
+    const existing = ta.value;
+    const next = existing.trim() === ''
+      ? tpl.notesStructure
+      : existing.replace(/\s+$/, '') + '\n\n' + tpl.notesStructure;
+    setNotesContent(ta, next);
+  }
+
+  // Refresh the step-05 recap (template · language · source) from current state.
+  function updateSynthRecap() {
+    if (!elements.synthRecap) return;
+    const tkey = elements.templateSelect.value;
+    const tname = state.templates[tkey] ? state.templates[tkey].name : 'Custom';
+
+    const sourceLabels = {
+      microphone: 'Microphone',
+      text: 'Pasted text',
+      'audio-file': 'Audio file',
+      'text-file': 'Text file'
+    };
+    const source = sourceLabels[state.inputMethod] || 'Microphone';
+
+    const langSel = state.inputMethod === 'audio-file'
+      ? elements.audioLangSelect
+      : elements.dictationLangSelect;
+    const lang = langSel && langSel.options[langSel.selectedIndex]
+      ? langSel.options[langSel.selectedIndex].text
+      : '—';
+
+    elements.synthRecap.innerHTML = '';
+    const parts = [
+      { k: 'Template', v: tname },
+      { k: 'Language', v: lang },
+      { k: 'Source', v: source }
+    ];
+    parts.forEach((p, i) => {
+      if (i > 0) {
+        const dot = document.createElement('span');
+        dot.className = 'recap-dot';
+        elements.synthRecap.appendChild(dot);
+      }
+      const item = document.createElement('span');
+      item.className = 'recap-item';
+      const k = document.createElement('span');
+      k.className = 'recap-k';
+      k.textContent = p.k;
+      item.appendChild(k);
+      item.appendChild(document.createTextNode(p.v));
+      elements.synthRecap.appendChild(item);
+    });
+  }
+
+  // ----- Template manager (Settings → Templates) -----------------------------
+  // Which template id the dialog is currently editing; null = creating a new one.
+  let editingTemplateId = null;
+
+  // Render the admin list of templates with Edit / Delete controls.
+  function renderTemplatesManager() {
+    const list = elements.templatesList;
+    if (!list) return;
+    list.innerHTML = '';
+
+    if (!state.templateList.length) {
+      const empty = document.createElement('p');
+      empty.className = 'hint';
+      empty.textContent = 'No templates yet. Create one to make it available in the workspace.';
+      list.appendChild(empty);
+      return;
+    }
+
+    state.templateList.forEach((t) => {
+      const row = document.createElement('div');
+      row.className = 'tpl-manage-row';
+
+      const info = document.createElement('div');
+      info.className = 'tpl-manage-info';
+      const name = document.createElement('div');
+      name.className = 'tpl-manage-name';
+      name.textContent = t.name;
+      const desc = document.createElement('div');
+      desc.className = 'hint tpl-manage-desc';
+      desc.textContent = t.prompt.replace(/\s+/g, ' ').trim().slice(0, 90) + (t.prompt.length > 90 ? '…' : '');
+      info.appendChild(name);
+      info.appendChild(desc);
+
+      const actions = document.createElement('div');
+      actions.className = 'row-actions';
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn btn-ghost btn-sm';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', () => openTemplateDialog(t));
+      const delBtn = document.createElement('button');
+      delBtn.className = 'icon-btn danger';
+      delBtn.title = 'Delete template';
+      delBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+      delBtn.addEventListener('click', () => deleteTemplate(t));
+      actions.appendChild(editBtn);
+      actions.appendChild(delBtn);
+
+      row.appendChild(info);
+      row.appendChild(actions);
+      list.appendChild(row);
+    });
+  }
+
+  // Open the create/edit dialog. Pass a template to edit, or null to create.
+  function openTemplateDialog(template) {
+    editingTemplateId = template ? template.id : null;
+    elements.templateDialogTitle.textContent = template ? 'Edit template' : 'New template';
+    elements.templateNameInput.value = template ? template.name : '';
+    elements.templatePromptInput.value = template ? template.prompt : '';
+    setNotesContent(elements.templateNotesInput, template ? (template.notesStructure || '') : '');
+    if (typeof elements.templateDialog.showModal === 'function') {
+      elements.templateDialog.showModal();
+    } else {
+      elements.templateDialog.setAttribute('open', '');
+    }
+    elements.templateNameInput.focus();
+  }
+
+  function closeTemplateDialog() {
+    if (elements.templateDialog.open) elements.templateDialog.close();
+    else elements.templateDialog.removeAttribute('open');
+  }
+
+  async function saveTemplateFromDialog() {
+    const name = elements.templateNameInput.value.trim();
+    const prompt = elements.templatePromptInput.value.trim();
+    const notesStructure = elements.templateNotesInput.value;
+    if (!name) { showToast('Template name cannot be empty.', 'error'); return; }
+    if (!prompt) { showToast('Template instructions cannot be empty.', 'error'); return; }
+
+    const editing = !!editingTemplateId;
+    const url = editing ? '/api/templates/' + encodeURIComponent(editingTemplateId) : '/api/templates';
+    try {
+      const r = await fetch(url, {
+        method: editing ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, prompt, notesStructure })
+      });
+      if (!r.ok) { const er = await r.json().catch(() => ({})); throw new Error(er.error || ('HTTP ' + r.status)); }
+      await fetchTemplates();
+      refreshTemplateSelectors();
+      closeTemplateDialog();
+      showToast(`Template "${name}" ${editing ? 'updated' : 'created'}.`, 'success');
+    } catch (err) {
+      showToast('Could not save template: ' + err.message, 'error');
+    }
+  }
+
+  async function deleteTemplate(template) {
+    if (!confirm(`Delete the template "${template.name}"? This cannot be undone. Existing minutes that used it are not affected.`)) return;
+    try {
+      const r = await fetch('/api/templates/' + encodeURIComponent(template.id), { method: 'DELETE' });
+      if (!r.ok) { const er = await r.json().catch(() => ({})); throw new Error(er.error || ('HTTP ' + r.status)); }
+      await fetchTemplates();
+      refreshTemplateSelectors();
+      showToast(`Template "${template.name}" deleted.`, 'success');
+    } catch (err) {
+      showToast('Could not delete template: ' + err.message, 'error');
     }
   }
 
@@ -757,117 +852,21 @@ Structure it with:
       }
     });
 
-    // Template Selector change listener
-    elements.templateEditSelect.addEventListener('change', (e) => {
-      loadTemplateToEditor(e.target.value);
-    });
+    // Template manager — create / edit / delete (server-backed, admin only)
+    if (elements.btnAddTemplate) {
+      elements.btnAddTemplate.addEventListener('click', () => openTemplateDialog(null));
+    }
+    if (elements.templateForm) {
+      elements.templateForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        saveTemplateFromDialog();
+      });
+    }
+    if (elements.btnCloseTemplate) elements.btnCloseTemplate.addEventListener('click', closeTemplateDialog);
+    if (elements.btnCancelTemplate) elements.btnCancelTemplate.addEventListener('click', closeTemplateDialog);
 
-    // Save Template override
-    elements.btnSaveTemplate.addEventListener('click', () => {
-      const key = elements.templateEditSelect.value;
-      const newName = elements.templateEditName.value.trim();
-      const newPrompt = elements.templateEditPrompt.value.trim();
-
-      if (!newName) {
-        showToast("Template Name cannot be empty.", "error");
-        return;
-      }
-      if (!newPrompt) {
-        showToast("Template Instructions cannot be empty.", "error");
-        return;
-      }
-
-      // Update state
-      state.templates[key] = {
-        name: newName,
-        prompt: newPrompt
-      };
-
-      // Save custom overrides to localStorage
-      try {
-        const custom = JSON.parse(localStorage.getItem('minutae_custom_templates') || '{}');
-        custom[key] = {
-          name: newName,
-          prompt: newPrompt
-        };
-        localStorage.setItem('minutae_custom_templates', JSON.stringify(custom));
-        
-        // Dynamic refresh across selectors
-        refreshTemplateSelectors();
-        showToast(`Template "${newName}" saved!`, "success");
-      } catch (err) {
-        console.error("Failed to save template override", err);
-        showToast("Failed to persist custom templates.", "error");
-      }
-    });
-
-    // Reset Templates to Factory Defaults
-    elements.btnResetTemplates.addEventListener('click', () => {
-      if (confirm("Are you absolutely sure you want to restore all templates to factory defaults? Your custom changes will be permanently discarded.")) {
-        localStorage.removeItem('minutae_custom_templates');
-        
-        const defaults = {
-          standard: {
-            name: "Standard Chronological Minutes",
-            prompt: `Create comprehensive, professional meeting minutes divided into the following sections:
-1. **Meeting Details**: Title, Date (from context), Attendees (deduct from conversation), Facilitator (deduct).
-2. **Executive Overview**: A robust paragraph summarizing the overall purpose and outcome of the meeting.
-3. **Chronological Discussion Summary**: Detailed bullet points summarizing what was discussed, who made what points, and arguments raised.
-4. **Decisions Made**: A clear, numbered list of all finalized decisions.
-5. **Next Steps / Action Items**: Bullet points listing clear tasks, who is responsible, and deadlines.`
-          },
-          action: {
-            name: "Action Items & Tasks Table",
-            prompt: `Synthesize the transcript and notes into a highly task-oriented summary. The focus must be 100% on execution.
-Generate a structured Markdown table summarizing the Action Items. The table must have exactly these columns:
-| Task / Deliverable | Owner | Deadline | Priority (High/Medium/Low) | Status/Description |
-
-Below the table, provide:
-1. **Critical Path Items**: A bulleted section describing the 3 most urgent roadblocks or tasks.
-2. **Dependencies & Risks**: Any items that depend on other tasks or have potential risks associated with them.`
-          },
-          executive: {
-            name: "Executive Brief (TL;DR)",
-            prompt: `Provide a high-level, ultra-polished Executive Brief designed for C-level leadership who did not attend the meeting.
-Structure it with:
-1. **TL;DR Highlights**: 3-4 bullet points outlining the highest-impact results.
-2. **Strategic Decisions**: Strategic choices made, and their business implications.
-3. **Key Progress / Status Updates**: Brief summary of project updates discussed.
-4. **Critical Asks / Needs**: Immediate needs or blockers that require leadership attention.
-Keep paragraphs brief, dense, and punchy.`
-          },
-          technical: {
-            name: "Engineering & Tech Spec Summary",
-            prompt: `Synthesize this into a technical spec summary. Focus on engineering architecture, designs, and systems discussed.
-Structure it with:
-1. **Architecture & Technical Decisions**: System diagrams discussed, database schema modifications, or APIs changes.
-2. **Code & Implementation Notes**: Specific files, libraries, or technologies discussed.
-3. **Bug Reports & Issues Addressed**: Technical problems identified and resolutions agreed upon.
-4. **Testing & QA Actions**: Automated testing plans, manual QA scopes, and deployment steps.`
-          },
-          creative: {
-            name: "Creative Concept Map",
-            prompt: `Synthesize this meeting into a conceptual outline showing the relationship of ideas and lateral brainstorming.
-Structure it with:
-1. **Core Theme / Anchor Idea**: The single central concept of the meeting.
-2. **Primary Conceptual Branches**: The major ideas explored, with hierarchical sub-bullets for supporting suggestions.
-3. **Tangential Explorations**: Ideas that were briefly touched upon but rejected or deferred (wildcard suggestions).
-4. **Inspirational Takeaways**: Creative summaries, analogies, or vision statements created during the meeting.`
-          }
-        };
-
-        state.templates = defaults;
-        
-        // Dynamic selector sync
-        refreshTemplateSelectors();
-        loadTemplateToEditor(elements.templateEditSelect.value || 'standard');
-        
-        showToast("Templates restored to factory defaults", "success");
-      }
-    });
-
-    // Initial input load inside templates editor panel
-    loadTemplateToEditor(elements.templateEditSelect.value || 'standard');
+    // Render whatever templates are already loaded into state
+    renderTemplatesManager();
 
     // Check Local Gemini Nano Status
     checkLocalGeminiNanoAvailability();
@@ -1337,6 +1336,7 @@ Structure it with:
       localStorage.setItem('minutae_dictation_lang', state.dictationLang);
       const langName = elements.dictationLangSelect.options[elements.dictationLangSelect.selectedIndex].text;
       showToast(`Transcription language: ${langName}`, "info");
+      updateSynthRecap();
     });
 
     elements.micToggleBtn.addEventListener('click', async () => {
@@ -1378,7 +1378,7 @@ Structure it with:
     state.recordedText = '';
     elements.meetingTitle.value = '';
     elements.transcriptInput.value = '';
-    elements.notesInput.value = '';
+    setNotesContent(elements.notesInput, '');
     if (state.audioFile && state.audioFile.file && elements.btnRemoveAudio) elements.btnRemoveAudio.click();
     if (state.textFile && state.textFile.name && elements.btnRemoveText) elements.btnRemoveText.click();
   }
@@ -1497,7 +1497,13 @@ Structure it with:
     const transcript = elements.transcriptInput.value.trim();
     const notes = elements.notesInput.value.trim();
     const templateKey = elements.templateSelect.value;
-    
+
+    // A template is required — the admin may have deleted them all.
+    if (!templateKey || !state.templates[templateKey]) {
+      showToast("No template selected. Ask an admin to create one in Settings → Templates.", "error");
+      return;
+    }
+
     // Validation based on input method
     if (state.inputMethod === 'audio-file') {
       if (!state.audioFile.file) {
@@ -1631,6 +1637,13 @@ Structure it with:
       }
 
       if (isCancelled) return;
+
+      // Append a verbatim copy of the manual notes to the end of the minutes,
+      // so the AI summary is always followed by exactly what the user typed.
+      if (notes) {
+        summaryResult = (summaryResult || '').replace(/\s+$/, '') + '\n\n## Manual notes\n\n' + notes;
+      }
+
       updateProgressDialogState(3); // Saving to archive
       setGenStatus('Saving to archive…');
 
@@ -2090,7 +2103,7 @@ Structure it with:
       toggleAdminUIElements('operator');
       elements.meetingTitle.value = '';
       elements.transcriptInput.value = '';
-      elements.notesInput.value = '';
+      setNotesContent(elements.notesInput, '');
       if (elements.btnRemoveAudio) { try { elements.btnRemoveAudio.click(); } catch {} }
       if (elements.btnRemoveText) { try { elements.btnRemoveText.click(); } catch {} }
       renderArchiveGrid();
@@ -2160,6 +2173,7 @@ Structure it with:
     if (elements.dictationLangSelect) elements.dictationLangSelect.value = locale;
     if (elements.audioLangSelect) elements.audioLangSelect.value = locale;
     if (elements.userLanguageSelect) elements.userLanguageSelect.value = lang;
+    updateSynthRecap();
   }
 
   // Bring the app into the logged-in state for the given identity.
@@ -2176,6 +2190,7 @@ Structure it with:
       state.meetings = fromServer;
       localStorage.setItem('minutae_meetings_' + state.currentUser.username, JSON.stringify(state.meetings));
     }
+    await fetchTemplates();
     refreshTemplateSelectors();
     renderArchiveGrid();
     switchView('dashboard');
@@ -2356,18 +2371,346 @@ Structure it with:
     });
   }
 
+  // ----- WYSIWYG editor for manual-notes fields ------------------------------
+  // Notes are stored/sent as Markdown, but edited in a contenteditable surface
+  // that renders formatting live (an H1 looks like a heading, not "# x"). Each
+  // <textarea> stays in the DOM, hidden, as the canonical Markdown mirror so
+  // every existing `.value` read (generate, save, template storage) keeps working.
+
+  // Markdown -> HTML for the editor surface (supported subset).
+  function notesMdToHtml(md) {
+    if (!md) return '';
+    const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const inline = (s) => esc(s)
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>');
+    const lines = md.replace(/\r/g, '').split('\n');
+    let html = '', i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^### /.test(line)) { html += '<h3>' + inline(line.slice(4)) + '</h3>'; i++; continue; }
+      if (/^## /.test(line)) { html += '<h2>' + inline(line.slice(3)) + '</h2>'; i++; continue; }
+      if (/^# /.test(line)) { html += '<h1>' + inline(line.slice(2)) + '</h1>'; i++; continue; }
+      if (/^(---|\*\*\*|___)\s*$/.test(line)) { html += '<hr>'; i++; continue; }
+      if (/^```/.test(line)) {
+        i++; const code = [];
+        while (i < lines.length && !/^```/.test(lines[i])) { code.push(lines[i]); i++; }
+        i++; html += '<pre>' + esc(code.join('\n')) + '</pre>'; continue;
+      }
+      if (/^\s*[-*] /.test(line)) {
+        html += '<ul>';
+        while (i < lines.length && /^\s*[-*] /.test(lines[i])) { html += '<li>' + inline(lines[i].replace(/^\s*[-*] /, '')) + '</li>'; i++; }
+        html += '</ul>'; continue;
+      }
+      if (/^\s*\d+\. /.test(line)) {
+        html += '<ol>';
+        while (i < lines.length && /^\s*\d+\. /.test(lines[i])) { html += '<li>' + inline(lines[i].replace(/^\s*\d+\.\s/, '')) + '</li>'; i++; }
+        html += '</ol>'; continue;
+      }
+      if (/^> /.test(line)) {
+        const q = [];
+        while (i < lines.length && /^> /.test(lines[i])) { q.push(inline(lines[i].slice(2))); i++; }
+        html += '<blockquote>' + q.join('<br>') + '</blockquote>'; continue;
+      }
+      if (line.trim() === '') { i++; continue; }
+      html += '<p>' + inline(line) + '</p>'; i++;
+    }
+    return html;
+  }
+
+  // HTML (from the editor) -> Markdown for storage / AI / output.
+  function notesHtmlToMd(root) {
+    const out = [];
+    const inline = (node) => {
+      let s = '';
+      node.childNodes.forEach((n) => {
+        if (n.nodeType === 3) { s += n.nodeValue; return; }
+        const tag = n.nodeName.toLowerCase();
+        if (tag === 'br') s += '\n';
+        else if (tag === 'strong' || tag === 'b') s += '**' + inline(n) + '**';
+        else if (tag === 'em' || tag === 'i') s += '*' + inline(n) + '*';
+        else if (tag === 'code') s += '`' + n.textContent + '`';
+        else s += inline(n);
+      });
+      return s;
+    };
+    const block = (node) => {
+      const tag = node.nodeName.toLowerCase();
+      if (tag === 'h1') out.push('# ' + inline(node), '');
+      else if (tag === 'h2') out.push('## ' + inline(node), '');
+      else if (tag === 'h3') out.push('### ' + inline(node), '');
+      else if (tag === 'ul') { node.querySelectorAll(':scope > li').forEach((li) => out.push('- ' + inline(li))); out.push(''); }
+      else if (tag === 'ol') { let n = 1; node.querySelectorAll(':scope > li').forEach((li) => out.push((n++) + '. ' + inline(li))); out.push(''); }
+      else if (tag === 'blockquote') { inline(node).split('\n').forEach((l) => out.push('> ' + l)); out.push(''); }
+      else if (tag === 'pre') { out.push('```', node.textContent.replace(/\n$/, ''), '```', ''); }
+      else if (tag === 'hr') out.push('---', '');
+      else if (tag === 'li') out.push('- ' + inline(node));
+      else { const t = inline(node); out.push(t.replace(/​/g, '')); if (t.trim() !== '') out.push(''); }
+    };
+    Array.from(root.childNodes).forEach((n) => {
+      if (n.nodeType === 3) { if (n.nodeValue.trim()) out.push(n.nodeValue, ''); }
+      else block(n);
+    });
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '');
+  }
+
+  // Set a notes field's Markdown and re-render its WYSIWYG surface (if attached).
+  function setNotesContent(textarea, md) {
+    if (!textarea) return;
+    textarea.value = md || '';
+    if (textarea._renderFromValue) textarea._renderFromValue();
+  }
+
+  // A selection "bubble" toolbar (inline + block formatting) and a "/" slash menu
+  // (block inserts) over a live WYSIWYG surface. `container` is where the floating
+  // UI is appended — pass the <dialog> for modal fields so it renders in the
+  // dialog's top layer instead of behind it.
+  function attachNotesEditor(ta, container) {
+    if (!ta) return;
+    container = container || document.body;
+
+    // Build the visible WYSIWYG surface; hide the textarea (Markdown mirror).
+    const ce = document.createElement('div');
+    ce.className = 'wysiwyg';
+    ce.contentEditable = 'true';
+    ce.setAttribute('role', 'textbox');
+    ce.setAttribute('aria-multiline', 'true');
+    if (ta.getAttribute('placeholder')) ce.dataset.placeholder = ta.getAttribute('placeholder');
+    ta.style.display = 'none';
+    ta.parentNode.insertBefore(ce, ta);
+
+    const updateEmpty = () => ce.classList.toggle('is-empty', ce.textContent.replace(/​/g, '').trim() === '' && !ce.querySelector('hr,li'));
+    const syncToTextarea = () => { ta.value = notesHtmlToMd(ce); updateEmpty(); };
+    const renderFromValue = () => { ce.innerHTML = notesMdToHtml(ta.value); updateEmpty(); };
+    ta._renderFromValue = renderFromValue;
+    renderFromValue();
+
+    // --- block / inline helpers (execCommand-based; the app targets Chromium) ---
+    function currentBlock() {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return null;
+      let n = sel.getRangeAt(0).startContainer;
+      if (n.nodeType === 3) n = n.parentNode;
+      return n.closest ? n.closest('h1,h2,h3,p,li,blockquote,pre,div') : null;
+    }
+    function formatBlock(tag) {
+      const cur = currentBlock();
+      const same = cur && cur.nodeName.toLowerCase() === tag.toLowerCase();
+      document.execCommand('formatBlock', false, same ? 'P' : tag);
+      ce.focus(); syncToTextarea();
+    }
+    const exec = (cmd) => { document.execCommand(cmd, false, null); ce.focus(); syncToTextarea(); };
+    function wrapInlineCode() {
+      const sel = window.getSelection();
+      if (!sel.rangeCount || sel.isCollapsed) return;
+      const code = document.createElement('code');
+      code.textContent = sel.toString();
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(code);
+      const r = document.createRange(); r.selectNodeContents(code);
+      sel.removeAllRanges(); sel.addRange(r);
+      ce.focus(); syncToTextarea();
+    }
+
+    // --- bubble toolbar ---
+    const bubble = document.createElement('div');
+    bubble.className = 'fmt-bubble';
+    const BTNS = [
+      { html: '<strong>B</strong>', title: 'Bold', act: () => exec('bold') },
+      { html: '<span class="i-em">I</span>', title: 'Italic', act: () => exec('italic') },
+      { html: '&lt;/&gt;', title: 'Inline code', act: wrapInlineCode },
+      { sep: true },
+      { html: 'H1', title: 'Heading 1', act: () => formatBlock('H1') },
+      { html: 'H2', title: 'Heading 2', act: () => formatBlock('H2') },
+      { html: '&bull;', title: 'Bulleted list', act: () => exec('insertUnorderedList') },
+      { html: '1.', title: 'Numbered list', act: () => exec('insertOrderedList') },
+      { html: '&rdquo;', title: 'Quote', act: () => formatBlock('BLOCKQUOTE') }
+    ];
+    BTNS.forEach((b) => {
+      if (b.sep) { const s = document.createElement('span'); s.className = 'sep'; bubble.appendChild(s); return; }
+      const btn = document.createElement('button');
+      btn.type = 'button'; btn.title = b.title; btn.innerHTML = b.html;
+      btn.addEventListener('mousedown', (ev) => ev.preventDefault()); // keep the selection
+      btn.addEventListener('click', () => { b.act(); setTimeout(positionBubble, 0); });
+      bubble.appendChild(btn);
+    });
+    container.appendChild(bubble);
+
+    const inCe = () => { const s = window.getSelection(); return s.rangeCount && ce.contains(s.getRangeAt(0).commonAncestorContainer); };
+    function selectionRect() {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return null;
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      return (rect && (rect.width || rect.height)) ? rect : null;
+    }
+    function caretRect() {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return null;
+      const range = sel.getRangeAt(0).cloneRange();
+      range.collapse(true);
+      const span = document.createElement('span');
+      span.textContent = '​';
+      range.insertNode(span);
+      const rect = span.getBoundingClientRect();
+      const parent = span.parentNode;
+      parent.removeChild(span);
+      if (parent.normalize) parent.normalize();
+      return rect;
+    }
+    function positionBubble() {
+      const sel = window.getSelection();
+      if (!inCe() || sel.isCollapsed) { bubble.style.display = 'none'; return; }
+      const r = selectionRect();
+      if (!r) { bubble.style.display = 'none'; return; }
+      bubble.style.display = 'flex';
+      const bw = bubble.offsetWidth, bh = bubble.offsetHeight;
+      const left = Math.max(8, Math.min(r.left + r.width / 2 - bw / 2, window.innerWidth - bw - 8));
+      let top = r.top - bh - 8;
+      if (top < 8) top = r.bottom + 8;
+      bubble.style.left = left + 'px';
+      bubble.style.top = top + 'px';
+    }
+    function hideBubble() { bubble.style.display = 'none'; }
+
+    // --- slash menu ---
+    function insertDivider() { document.execCommand('insertHTML', false, '<hr><p><br></p>'); ce.focus(); syncToTextarea(); }
+    const SLASH = [
+      { key: '#', label: 'Heading 1', act: () => formatBlock('H1') },
+      { key: '##', label: 'Heading 2', act: () => formatBlock('H2') },
+      { key: '###', label: 'Heading 3', act: () => formatBlock('H3') },
+      { key: '•', label: 'Bulleted list', act: () => exec('insertUnorderedList') },
+      { key: '1.', label: 'Numbered list', act: () => exec('insertOrderedList') },
+      { key: '"', label: 'Quote', act: () => formatBlock('BLOCKQUOTE') },
+      { key: '—', label: 'Divider', act: insertDivider },
+      { key: '</>', label: 'Code block', act: () => formatBlock('PRE') }
+    ];
+    const menu = document.createElement('div');
+    menu.className = 'slash-menu';
+    container.appendChild(menu);
+    let slashOpen = false, slashFiltered = [], slashIndex = 0;
+
+    function blockBeforeCaret() {
+      const sel = window.getSelection();
+      if (!sel.rangeCount || !inCe()) return null;
+      const range = sel.getRangeAt(0);
+      let block = range.startContainer;
+      if (block.nodeType === 3) block = block.parentNode;
+      block = block.closest ? block.closest('h1,h2,h3,p,li,blockquote,div') : null;
+      if (!block) block = ce;
+      const r = document.createRange();
+      r.selectNodeContents(block);
+      r.setEnd(range.startContainer, range.startOffset);
+      return { text: r.toString(), block };
+    }
+    function slashQuery() {
+      const info = blockBeforeCaret();
+      if (!info) return null;
+      const m = info.text.match(/^\/([^\n/]*)$/);
+      return m ? m[1] : null;
+    }
+    function renderSlash(query) {
+      const q = query.toLowerCase();
+      slashFiltered = SLASH.filter((it) => it.label.toLowerCase().includes(q));
+      if (slashIndex >= slashFiltered.length) slashIndex = 0;
+      menu.innerHTML = '';
+      slashFiltered.forEach((it, i) => {
+        const row = document.createElement('div');
+        row.className = 'slash-item' + (i === slashIndex ? ' is-active' : '');
+        const k = document.createElement('span'); k.className = 's-key'; k.textContent = it.key;
+        const l = document.createElement('span'); l.className = 's-label'; l.textContent = it.label;
+        row.appendChild(k); row.appendChild(l);
+        row.addEventListener('mousedown', (ev) => { ev.preventDefault(); chooseSlash(i); });
+        menu.appendChild(row);
+      });
+    }
+    function openSlash(query) {
+      renderSlash(query);
+      if (!slashFiltered.length) { closeSlash(); return; }
+      slashOpen = true;
+      const r = caretRect();
+      menu.style.display = 'block';
+      if (!r) return;
+      const mw = menu.offsetWidth, mh = menu.offsetHeight;
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - mw - 8));
+      let top = r.bottom + 6;
+      if (top + mh > window.innerHeight - 8) top = r.top - mh - 6;
+      menu.style.left = left + 'px';
+      menu.style.top = top + 'px';
+    }
+    function closeSlash() { slashOpen = false; slashIndex = 0; menu.style.display = 'none'; }
+    function moveSlash(d) {
+      if (!slashFiltered.length) return;
+      slashIndex = (slashIndex + d + slashFiltered.length) % slashFiltered.length;
+      const q = slashQuery(); renderSlash(q == null ? '' : q);
+    }
+    function chooseSlash(i) {
+      const it = slashFiltered[i]; if (!it) return;
+      const info = blockBeforeCaret();
+      closeSlash();
+      if (info && info.block) {
+        const sel = window.getSelection();
+        const caret = sel.getRangeAt(0);
+        const del = document.createRange();
+        del.selectNodeContents(info.block);
+        del.setEnd(caret.startContainer, caret.startOffset);
+        del.deleteContents();
+        const r = document.createRange();
+        r.selectNodeContents(info.block); r.collapse(true);
+        sel.removeAllRanges(); sel.addRange(r);
+      }
+      it.act();
+    }
+
+    // --- events ---
+    const onSelect = () => { if (!slashOpen) positionBubble(); };
+    ce.addEventListener('mouseup', () => setTimeout(onSelect, 0));
+    ce.addEventListener('keyup', (ev) => {
+      if (ev.shiftKey || ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(ev.key)) onSelect();
+    });
+    ce.addEventListener('input', () => {
+      syncToTextarea();
+      hideBubble();
+      const q = slashQuery();
+      if (q != null) openSlash(q);
+      else closeSlash();
+    });
+    ce.addEventListener('keydown', (ev) => {
+      if (!slashOpen) return;
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); moveSlash(1); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); moveSlash(-1); }
+      else if (ev.key === 'Enter' || ev.key === 'Tab') { ev.preventDefault(); chooseSlash(slashIndex); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); closeSlash(); }
+    });
+    ce.addEventListener('blur', () => setTimeout(() => { hideBubble(); closeSlash(); }, 150));
+    ce.addEventListener('scroll', () => { hideBubble(); closeSlash(); });
+    document.addEventListener('scroll', () => { if (bubble.style.display !== 'none') positionBubble(); }, true);
+    window.addEventListener('resize', () => { hideBubble(); closeSlash(); });
+    document.addEventListener('mousedown', (ev) => {
+      if (!ce.contains(ev.target) && !bubble.contains(ev.target)) hideBubble();
+      if (!ce.contains(ev.target) && !menu.contains(ev.target)) closeSlash();
+    });
+  }
+
   // ==========================================
   // 11. STARTUP INITIALIZATION
   // ==========================================
-  
+
   function init() {
     initRouting();
     initInputMethodControllers();
     updateSystemBadges();
     refreshTemplateSelectors();
+    elements.templateSelect.addEventListener('change', () => {
+      updateSynthRecap();
+      appendNotesStructure(elements.templateSelect.value);
+    });
     initSettingsPanel();
     initVoiceDictation();
     initUserAuth();
+    attachNotesEditor(elements.notesInput, document.body);
+    attachNotesEditor(elements.templateNotesInput, elements.templateDialog);
     initMobileNavigation();
   }
 

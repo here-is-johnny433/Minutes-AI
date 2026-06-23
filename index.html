@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=8">
+  <link rel="stylesheet" href="styles.css?v=16">
 </head>
 <body>
 
@@ -78,28 +78,55 @@
       <section id="view-dashboard" class="content-view active">
         <header class="topbar">
           <div>
-            <h1>Meeting Workspace</h1>
-            <p class="page-sub">Draft, dictate, and synthesize meeting minutes with AI.</p>
+            <span class="eyebrow">New minutes</span>
+            <h1 class="flow-h1">Synthesize a meeting</h1>
           </div>
-          <div class="meeting-meta">
-            <span class="eyebrow">Meeting title</span>
-            <label for="meeting-title" class="sr-only">Meeting Title</label>
-            <input id="meeting-title" class="meeting-title-field" value="Weekly Sync — May 20, 2026" placeholder="Untitled Meeting">
-          </div>
+          <div class="step-counter mono">5 steps</div>
         </header>
 
-        <div class="canvas">
-          <div class="work-grid">
+        <div class="canvas flow-canvas">
+          <div class="flow">
 
-            <!-- Panel 01: transcript -->
-            <section class="panel">
-              <div class="panel-head">
-                <span class="panel-num">01</span>
+            <!-- 01 · MEETING TITLE -->
+            <section class="flow-step">
+              <div class="flow-gutter"><div class="flow-node mono">01</div></div>
+              <div class="flow-head">
                 <div class="grow">
-                  <div class="panel-title">Meeting transcript</div>
-                  <div class="panel-sub">Record live, paste text, or upload a file.</div>
+                  <div class="flow-title">Meeting title</div>
+                  <div class="flow-sub">Name this session so you can find it again later.</div>
                 </div>
               </div>
+              <div class="flow-content">
+                <label for="meeting-title" class="sr-only">Meeting title</label>
+                <input id="meeting-title" class="title-input" value="Weekly Sync — May 20, 2026" placeholder="e.g. Weekly Product Sync">
+              </div>
+            </section>
+
+            <!-- 02 · TEMPLATE -->
+            <section class="flow-step">
+              <div class="flow-gutter"><div class="flow-node mono">02</div></div>
+              <div class="flow-head">
+                <div class="grow">
+                  <div class="flow-title">Template</div>
+                  <div class="flow-sub">Choose the structure the AI will write your minutes into.</div>
+                </div>
+              </div>
+              <div class="flow-content">
+                <label for="template-select" class="sr-only">Template</label>
+                <select id="template-select" class="select tpl-select"></select>
+              </div>
+            </section>
+
+            <!-- 03 · TRANSCRIPT -->
+            <section class="flow-step">
+              <div class="flow-gutter"><div class="flow-node mono">03</div></div>
+              <div class="flow-head">
+                <div class="grow">
+                  <div class="flow-title">Meeting transcript</div>
+                  <div class="flow-sub">Record live, paste text, or upload a file.</div>
+                </div>
+              </div>
+              <div class="flow-content">
 
               <div class="source-row">
                 <span class="field-label">Source</span>
@@ -207,43 +234,47 @@
               </div>
 
               <div id="text-input-container">
-                <textarea id="transcript-input" class="textarea" placeholder="Paste your raw meeting transcript here, upload a .txt file, or use the recorder above to dictate in real time…"></textarea>
+                <textarea id="transcript-input" class="textarea ta-transcript" placeholder="Paste your raw meeting transcript here, upload a .txt file, or use the recorder above to dictate in real time…"></textarea>
+              </div>
               </div>
             </section>
 
-            <!-- Panel 02: notes -->
-            <section class="panel">
-              <div class="panel-head">
-                <span class="panel-num">02</span>
+            <!-- 04 · PERSONAL NOTES -->
+            <section class="flow-step">
+              <div class="flow-gutter"><div class="flow-node mono">04</div></div>
+              <div class="flow-head">
                 <div class="grow">
-                  <div class="panel-title">Personal notes &amp; highlights</div>
-                  <div class="panel-sub">Optional — helps the AI resolve context.</div>
+                  <div class="flow-title">Manual notes</div>
+                  <div class="flow-sub">Optional — context that helps the AI fill the gaps. Picking a template loads its structure here.</div>
                 </div>
                 <span class="panel-tag">Enhances AI</span>
               </div>
-              <textarea id="notes-input" class="textarea notes-area" placeholder="Jot down rough notes, observations, or action items.
-
-The AI combines these with the transcript to resolve context gaps, highlight key names, and correct errors."></textarea>
+              <div class="flow-content">
+                <textarea id="notes-input" class="textarea notes-area ta-notes" placeholder="Jot down rough notes, names, or action items. The AI combines these with the transcript to resolve context gaps, highlight key names, and correct errors."></textarea>
+              </div>
             </section>
 
-          </div>
+            <!-- 05 · SYNTHESIZE -->
+            <section class="flow-step is-final">
+              <div class="flow-gutter"><div class="flow-node mono">05</div></div>
+              <div class="flow-head">
+                <div class="grow">
+                  <div class="flow-title">Synthesize minutes</div>
+                  <div class="flow-sub">Generate clean, structured minutes from everything above.</div>
+                </div>
+              </div>
+              <div class="flow-content">
 
-          <div class="synth-bar">
-            <div class="synth-left">
-              <span class="field-label">Template</span>
-              <select id="template-select" class="select">
-                <option value="standard">Standard minutes</option>
-                <option value="discovery">Discovery / consulting session</option>
-                <option value="action">Action items &amp; tasks</option>
-                <option value="executive">Executive brief</option>
-                <option value="technical">Engineering &amp; tech spec</option>
-                <option value="creative">Creative concept map</option>
-              </select>
-            </div>
-            <button id="btn-generate" class="btn btn-primary">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6z"/></svg>
-              Synthesize minutes
-            </button>
+          <div class="synth-final">
+                  <div class="synth-recap" id="synth-recap"></div>
+                  <button id="btn-generate" class="btn btn-primary btn-lg">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6z"/></svg>
+                    Synthesize minutes
+                  </button>
+                </div>
+              </div>
+            </section>
+
           </div>
         </div>
       </section>
@@ -381,31 +412,16 @@ The AI combines these with the transcript to resolve context gaps, highlight key
             <div class="set-block">
               <span class="eyebrow">Output</span>
               <h2>Templates</h2>
-              <p class="blurb">Customize the prompts that shape each kind of minutes.</p>
+              <p class="blurb">Create and customize the prompts that shape each kind of minutes. These are shared across all users and picked in the workspace.</p>
               <div class="set-card">
-                <div class="form-row">
-                  <label for="template-edit-select">Template to edit</label>
-                  <select id="template-edit-select" class="select" style="max-width:none;width:100%">
-                    <option value="standard">Standard minutes</option>
-                    <option value="discovery">Discovery / consulting session</option>
-                    <option value="action">Action items &amp; tasks</option>
-                    <option value="executive">Executive brief</option>
-                    <option value="technical">Engineering &amp; tech spec</option>
-                    <option value="creative">Creative concept map</option>
-                  </select>
+                <div class="row-between" style="margin-bottom:18px">
+                  <span class="hint">Add as many templates as you like — edit or delete any of them.</span>
+                  <button id="btn-add-template" class="btn btn-primary btn-sm">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    New template
+                  </button>
                 </div>
-                <div class="form-row">
-                  <label for="template-edit-name">Display name</label>
-                  <input type="text" id="template-edit-name" class="input" placeholder="e.g. Standard chronological minutes">
-                </div>
-                <div class="form-row">
-                  <label for="template-edit-prompt">AI instructions / prompt</label>
-                  <textarea id="template-edit-prompt" class="input" style="min-height:150px;resize:vertical;font-family:var(--sans);line-height:1.6" placeholder="Instructions for the AI synthesizer…"></textarea>
-                </div>
-                <div class="row-between" style="justify-content:flex-start;gap:10px;margin-top:16px">
-                  <button id="btn-save-template" class="btn btn-primary btn-sm">Save changes</button>
-                  <button id="btn-reset-templates" class="btn btn-ghost btn-sm">Reset defaults</button>
-                </div>
+                <div id="templates-list" class="tpl-manage-list"></div>
               </div>
             </div>
 
@@ -530,6 +546,38 @@ The AI combines these with the transcript to resolve context gaps, highlight key
     </div>
   </dialog>
 
+  <!-- Create / edit template -->
+  <dialog id="template-dialog" class="app-dialog">
+    <div class="dialog" style="max-width:640px">
+      <div class="dialog-head">
+        <h2 id="template-dialog-title">New template</h2>
+        <button class="close-x" id="btn-close-template" aria-label="Close dialog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form id="template-form" class="dialog-body">
+        <div class="form-row">
+          <label for="template-name-input">Display name</label>
+          <input type="text" id="template-name-input" class="input" required maxlength="80" placeholder="e.g. Standard minutes" autocomplete="off">
+        </div>
+        <div class="form-row">
+          <label for="template-prompt-input">AI summary structure (prompt)</label>
+          <textarea id="template-prompt-input" class="input" required style="min-height:200px;resize:vertical;font-family:var(--sans);line-height:1.6" placeholder="Describe exactly how the AI should structure and write these minutes — sections, tone, what to include or omit…"></textarea>
+          <span class="hint">Sent to the AI alongside the transcript and manual notes.</span>
+        </div>
+        <div class="form-row">
+          <label for="template-notes-input">Manual notes structure</label>
+          <textarea id="template-notes-input" class="input" style="min-height:130px;resize:vertical;font-family:var(--mono);font-size:13px;line-height:1.6" placeholder="Optional scaffold loaded into the Manual notes field when this template is chosen, e.g.&#10;**Attendees:**&#10;&#10;**Agenda:**&#10;&#10;**Notes:**"></textarea>
+          <span class="hint">Markdown. Appended to the workspace Manual notes field when a user picks this template.</span>
+        </div>
+      </form>
+      <div class="dialog-foot">
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-cancel-template">Cancel</button>
+        <button type="submit" form="template-form" class="btn btn-primary btn-sm">Save template</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- ==================== AUTH ==================== -->
   <div id="auth-overlay" class="auth-overlay" style="display:flex">
     <div class="auth-wrap">
@@ -563,6 +611,6 @@ The AI combines these with the transcript to resolve context gaps, highlight key
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=17"></script>
 </body>
 </html>

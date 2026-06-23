@@ -150,15 +150,54 @@ h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.025em; line-height: 1
 /* ============================================================
    WORKSPACE
    ============================================================ */
-.work-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; flex: 1; min-height: 0; }
-.panel { display: flex; flex-direction: column; min-height: 0; }
-.panel-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 18px; }
-.panel-num {
-  font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--accent);
-  letter-spacing: 0.04em; flex: 0 0 auto; padding-top: 2px;
+/* guided 5-step workflow */
+.flow-h1 { margin-top: 5px; }
+.step-counter {
+  font-size: 11.5px; color: var(--ink-3); border: 1px solid var(--line);
+  border-radius: 6px; padding: 7px 13px; flex: 0 0 auto; letter-spacing: 0.04em;
 }
-.panel-title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
-.panel-sub { font-size: 12.5px; color: var(--ink-3); margin-top: 2px; }
+.flow-canvas { padding-bottom: 40px; }
+.flow { display: flex; flex-direction: column; max-width: 940px; }
+.flow-step { display: grid; grid-template-columns: 34px 1fr; column-gap: 22px; }
+.flow-gutter { grid-column: 1; grid-row: 1 / 3; position: relative; display: flex; justify-content: center; }
+.flow-node {
+  width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink-2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12.5px; font-weight: 500; z-index: 1; flex: 0 0 auto;
+}
+.flow-step.is-final .flow-node { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+/* vertical spine bridges each node to the next (gutter spans both rows) */
+.flow-gutter::after {
+  content: ""; position: absolute; left: 50%; top: 34px; bottom: 0;
+  width: 1px; background: var(--line); transform: translateX(-0.5px);
+}
+.flow-step.is-final .flow-gutter::after { display: none; }
+
+.flow-head { grid-column: 2; grid-row: 1; display: flex; align-items: flex-start; gap: 14px; padding-top: 6px; margin-bottom: 14px; }
+.flow-title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.1; }
+.flow-sub { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; }
+.flow-content { grid-column: 2; grid-row: 2; padding-bottom: 26px; min-width: 0; }
+
+/* step 01 — title */
+.title-input {
+  width: 100%; max-width: 560px; background: var(--card); border: 1px solid var(--line);
+  border-radius: 9px; padding: 13px 16px; font-family: var(--sans);
+  font-size: 17px; font-weight: 600; color: var(--ink); outline: none;
+}
+.title-input::placeholder { color: var(--ink-3); font-weight: 500; }
+.title-input:focus { border-color: var(--accent); }
+
+/* step 02 — template dropdown (sized to match the step-01 title field) */
+.select.tpl-select {
+  width: 100%; max-width: 560px;
+  background-color: var(--card);
+  font-size: 15px; font-weight: 500;
+  border-radius: 9px; padding: 13px 42px 13px 16px;
+  background-position: right 14px center; background-size: 16px;
+}
+.select.tpl-select:hover { border-color: var(--ink-3); }
+
 .panel-tag {
   margin-left: auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--accent); white-space: nowrap;
@@ -225,15 +264,20 @@ h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.025em; line-height: 1
 .textarea::placeholder { color: var(--ink-3); }
 .textarea:focus { border-color: var(--accent); }
 .notes-area { background: var(--field); }
+/* flow-step textarea sizing (override the flexed base) */
+.ta-transcript, .ta-notes { flex: none; min-height: 200px; height: 200px; resize: vertical; }
 
-.synth-bar {
+/* step 05 — synthesize recap + action */
+.synth-final {
   display: flex; align-items: center; justify-content: space-between; gap: 24px;
-  border-top: 1px solid var(--line); padding: 20px 44px;
-  margin: 26px -44px 0;
-  flex-wrap: wrap;
+  border: 1px solid var(--line); border-radius: 11px;
+  padding: 15px 16px 15px 22px; background: var(--card); flex-wrap: wrap;
 }
-.synth-left { display: flex; align-items: center; gap: 16px; }
-.synth-left .field-label { white-space: nowrap; }
+.synth-recap { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--ink); flex-wrap: wrap; }
+.recap-item { white-space: nowrap; }
+.recap-k { font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-right: 7px; }
+.recap-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--line); flex: 0 0 auto; }
+.btn-lg { padding: 13px 24px; font-size: 14px; flex: 0 0 auto; }
 
 /* buttons */
 .btn {
@@ -339,6 +383,16 @@ h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.025em; line-height: 1
 .pwd .eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); border: none; background: none; cursor: pointer; color: var(--ink-3); display: flex; }
 .pwd .eye svg { width: 16px; height: 16px; }
 .divider { height: 1px; background: var(--line); margin: 28px 0; }
+
+/* template manager (Settings → Templates) */
+.tpl-manage-list { display: flex; flex-direction: column; }
+.tpl-manage-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line-2); }
+.tpl-manage-row:first-child { padding-top: 0; }
+.tpl-manage-row:last-child { border-bottom: none; padding-bottom: 0; }
+.tpl-manage-info { min-width: 0; }
+.tpl-manage-name { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.tpl-manage-desc { margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52ch; }
+.tpl-manage-row .row-actions { flex: 0 0 auto; align-items: center; }
 
 /* progress (model download) */
 .progress-track { height: 6px; background: var(--field); border-radius: 4px; overflow: hidden; margin-top: 10px; }
@@ -467,6 +521,62 @@ audio { width: 100%; margin-top: 14px; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 
 /* ============================================================
+   NOTION-STYLE NOTES EDITOR (bubble toolbar + slash menu)
+   ============================================================ */
+.fmt-bubble {
+  position: fixed; z-index: 300; display: none; align-items: center; gap: 1px;
+  background: var(--ink); border-radius: 9px; padding: 4px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.30);
+}
+.fmt-bubble button {
+  border: none; background: transparent; color: var(--paper); cursor: pointer;
+  font-family: var(--sans); font-size: 12.5px; font-weight: 600; line-height: 1;
+  padding: 6px 8px; border-radius: 6px; min-width: 28px;
+  display: flex; align-items: center; justify-content: center;
+}
+.fmt-bubble button:hover { background: rgba(255,255,255,0.16); }
+.fmt-bubble button .i-em { font-style: italic; font-family: var(--serif); }
+.fmt-bubble .sep { width: 1px; align-self: stretch; background: rgba(255,255,255,0.20); margin: 3px 3px; }
+
+.slash-menu {
+  position: fixed; z-index: 300; display: none; width: 250px; max-height: 290px; overflow-y: auto;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 16px 44px rgba(0,0,0,0.18); padding: 6px;
+}
+.slash-item { display: flex; align-items: center; gap: 11px; padding: 8px 10px; border-radius: 7px; cursor: pointer; }
+.slash-item .s-key {
+  width: 30px; height: 30px; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 11px; color: var(--ink-2); background: var(--field);
+}
+.slash-item .s-label { font-size: 13px; font-weight: 500; color: var(--ink); }
+.slash-item.is-active { background: var(--accent-soft); }
+
+/* WYSIWYG manual-notes surface (renders formatting live) */
+.wysiwyg {
+  width: 100%; min-height: 200px; resize: vertical; overflow-y: auto;
+  background: var(--field); border: 1px solid var(--line); border-radius: 9px;
+  padding: 16px 18px; font-family: var(--sans); font-size: 14px; line-height: 1.65;
+  color: var(--ink); outline: none;
+}
+.wysiwyg:focus { border-color: var(--accent); }
+.wysiwyg.is-empty::before {
+  content: attr(data-placeholder); color: var(--ink-3); pointer-events: none;
+}
+.wysiwyg > :first-child { margin-top: 0; }
+.wysiwyg h1 { font-size: 21px; font-weight: 700; letter-spacing: -0.015em; margin: 10px 0 6px; line-height: 1.2; }
+.wysiwyg h2 { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; margin: 10px 0 6px; line-height: 1.25; }
+.wysiwyg h3 { font-size: 15px; font-weight: 600; margin: 8px 0 4px; }
+.wysiwyg p { margin: 0 0 8px; }
+.wysiwyg ul, .wysiwyg ol { margin: 0 0 8px; padding-left: 24px; }
+.wysiwyg li { margin: 2px 0; }
+.wysiwyg blockquote { border-left: 2px solid var(--line); padding-left: 12px; margin: 0 0 8px; color: var(--ink-2); }
+.wysiwyg code { font-family: var(--mono); font-size: 12.5px; background: var(--card); padding: 1px 5px; border-radius: 4px; }
+.wysiwyg pre { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 0 0 8px; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; }
+.wysiwyg hr { border: none; border-top: 1px solid var(--line); margin: 12px 0; }
+#template-dialog .wysiwyg { min-height: 150px; }
+
+/* ============================================================
    MOBILE
    ============================================================ */
 .mobile-header { display: none; }
@@ -481,16 +591,22 @@ audio { width: 100%; margin-top: 14px; }
   .side.open { transform: none; }
   .sidebar-overlay { display: block; position: fixed; inset: 0; background: rgba(26,25,21,0.3); z-index: 70; opacity: 0; pointer-events: none; transition: opacity .25s; }
   .sidebar-overlay.active { opacity: 1; pointer-events: auto; }
-  .mobile-header { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
-  .mobile-menu-btn { width: 38px; height: 38px; border-radius: 8px; border: 1px solid var(--line); background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--ink); }
-  .mobile-menu-btn svg { width: 20px; height: 20px; }
+  .mobile-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  /* the brand mark is shared with the sidebar, which adds a 40px bottom margin —
+     reset it here so the wordmark centers against the menu button */
+  .mobile-header .brand { margin-bottom: 0; padding: 0; }
+  .mobile-menu-btn { width: 40px; height: 40px; margin-left: -8px; border-radius: 8px; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--ink-2); flex: 0 0 auto; transition: background .15s, color .15s; }
+  .mobile-menu-btn:hover { background: var(--accent-soft); color: var(--ink); }
+  .mobile-menu-btn svg { width: 22px; height: 22px; }
   .main { height: auto; flex: 1; }
   .topbar { flex-direction: column; align-items: flex-start; padding: 22px 20px 18px; }
   .meeting-meta { text-align: left; }
   .meeting-title-field { text-align: left; }
   .canvas { padding: 22px 20px 0; }
-  .work-grid { grid-template-columns: 1fr; }
-  .synth-bar { padding: 18px 20px; margin: 22px -20px 0; }
+  .flow-step { grid-template-columns: 26px 1fr; column-gap: 14px; }
+  .flow-node { width: 26px; height: 26px; font-size: 11px; }
+  .flow-gutter::after { top: 26px; }
+  .synth-final { padding: 16px; }
   .arch-grid { grid-template-columns: 1fr; }
   .auth-wrap { grid-template-columns: 1fr; }
   .auth-left { display: none; }
