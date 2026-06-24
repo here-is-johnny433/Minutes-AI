@@ -97,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
     archiveGrid: document.getElementById('archive-grid'),
     archiveEmptyState: document.getElementById('archive-empty-state'),
     archiveSearch: document.getElementById('archive-search'),
+    archiveFilterTag: document.getElementById('archive-filter-tag'),
     archiveFilterTemplate: document.getElementById('archive-filter-template'),
     
     // Settings View
@@ -816,7 +817,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     state.tags = {};
     state.tagList.forEach((t) => { state.tags[t.id] = t; });
+    refreshTagSelectors();
     return state.tagList;
+  }
+
+  function refreshTagSelectors() {
+    if (!elements.archiveFilterTag) return;
+    const prev = elements.archiveFilterTag.value;
+    elements.archiveFilterTag.innerHTML = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = 'all';
+    allOpt.textContent = 'All tags';
+    elements.archiveFilterTag.appendChild(allOpt);
+    state.tagList.forEach((t) => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      elements.archiveFilterTag.appendChild(opt);
+    });
+    elements.archiveFilterTag.value = (prev === 'all' || state.tags[prev]) ? prev : 'all';
   }
 
   // ---- Tag picker (workspace step 01) ----
@@ -2141,18 +2160,20 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderArchiveGrid() {
     const searchQuery = elements.archiveSearch.value.toLowerCase().trim();
     const templateFilter = elements.archiveFilterTemplate.value;
-    
+    const tagFilter = elements.archiveFilterTag ? elements.archiveFilterTag.value : 'all';
+
     // Clear grid
     elements.archiveGrid.innerHTML = '';
-    
+
     const filteredMeetings = state.meetings.filter(m => {
-      const matchesSearch = m.title.toLowerCase().includes(searchQuery) || 
+      const matchesSearch = m.title.toLowerCase().includes(searchQuery) ||
                             m.summary.toLowerCase().includes(searchQuery) ||
                             m.notes.toLowerCase().includes(searchQuery);
-      
+
       const matchesFilter = templateFilter === 'all' || m.template === templateFilter;
-      
-      return matchesSearch && matchesFilter;
+      const matchesTag = tagFilter === 'all' || (Array.isArray(m.tags) && m.tags.includes(tagFilter));
+
+      return matchesSearch && matchesFilter && matchesTag;
     });
 
     if (filteredMeetings.length === 0) {
@@ -2244,6 +2265,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Bind archive filters
   elements.archiveSearch.addEventListener('input', renderArchiveGrid);
+  elements.archiveFilterTag.addEventListener('change', renderArchiveGrid);
   elements.archiveFilterTemplate.addEventListener('change', renderArchiveGrid);
 
   // ==========================================
@@ -2417,8 +2439,8 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast("Username: 3+ chars, letters/numbers/_/- only.", "error");
         return;
       }
-      if (password.length < 4) {
-        showToast("Password must be at least 4 characters.", "error");
+      if (password.length < 8) {
+        showToast("Password must be at least 8 characters.", "error");
         return;
       }
       try {
@@ -2589,10 +2611,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function resetOperatorPassword(username) {
-    const newPassword = prompt(`Enter new password for ${username} (min 4 characters):`);
+    const newPassword = prompt(`Enter new password for ${username} (min 8 characters):`);
     if (newPassword === null) return;
-    if (newPassword.length < 4) {
-      showToast("Password must be at least 4 characters long.", "error");
+    if (newPassword.length < 8) {
+      showToast("Password must be at least 8 characters long.", "error");
       return;
     }
     try {
