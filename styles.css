@@ -584,9 +584,16 @@ audio { width: 100%; margin-top: 14px; }
 .title-tag-row { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 700px; flex-wrap: wrap; }
 .title-tag-row .title-input { flex: 1; min-width: 180px; max-width: none; }
 
-/* Tag picker container */
-.tag-picker { position: relative; flex: 0 0 auto; }
-.tag-picker-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 28px; }
+/* Tag picker container — styled as a field that matches the title input's
+   height (align-self: stretch tracks the input exactly, no magic numbers). */
+.tag-picker {
+  position: relative; flex: 0 0 auto; align-self: stretch;
+  display: flex; align-items: center;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 9px; padding: 0 8px;
+}
+.tag-picker:focus-within { border-color: var(--accent); }
+.tag-picker-row { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; height: 100%; }
 
 .tag-chip {
   display: inline-flex; align-items: center; gap: 5px;
@@ -602,14 +609,14 @@ audio { width: 100%; margin-top: 14px; }
 .tag-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; display: inline-block; }
 
 .tag-add-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 12px; font-weight: 500; color: var(--ink-3);
-  border: 1px dashed var(--line); border-radius: 5px; padding: 3px 9px;
-  background: transparent; cursor: pointer; transition: color .15s, border-color .15s;
-  font-family: var(--sans);
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12.5px; font-weight: 500; color: var(--ink-3);
+  border: none; border-radius: 6px; padding: 5px 7px;
+  background: transparent; cursor: pointer; transition: color .15s, background .15s;
+  font-family: var(--sans); white-space: nowrap;
 }
-.tag-add-btn svg { width: 11px; height: 11px; }
-.tag-add-btn:hover { color: var(--ink); border-color: var(--ink-3); }
+.tag-add-btn svg { width: 12px; height: 12px; }
+.tag-add-btn:hover { color: var(--accent); background: var(--field); }
 
 .tag-picker-dropdown {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
