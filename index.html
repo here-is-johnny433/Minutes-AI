@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=16">
+  <link rel="stylesheet" href="styles.css?v=17">
 </head>
 <body>
 
@@ -98,7 +98,13 @@
               </div>
               <div class="flow-content">
                 <label for="meeting-title" class="sr-only">Meeting title</label>
-                <input id="meeting-title" class="title-input" value="Weekly Sync — May 20, 2026" placeholder="e.g. Weekly Product Sync">
+                <div class="title-tag-row">
+                  <input id="meeting-title" class="title-input" value="Weekly Sync — May 20, 2026" placeholder="e.g. Weekly Product Sync">
+                  <div class="tag-picker" id="tag-picker">
+                    <div class="tag-picker-row" id="tag-picker-row"></div>
+                    <div class="tag-picker-dropdown" id="tag-picker-dropdown" style="display:none"></div>
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -425,6 +431,23 @@
               </div>
             </div>
 
+            <!-- Tags -->
+            <div class="set-block">
+              <span class="eyebrow">Organisation</span>
+              <h2>Tags</h2>
+              <p class="blurb">Create labels to categorize meetings. Tags are shared across all users and can be applied in the workspace.</p>
+              <div class="set-card">
+                <div class="row-between" style="margin-bottom:18px">
+                  <span class="hint">Add as many tags as you like — edit or delete any of them.</span>
+                  <button id="btn-add-tag" class="btn btn-primary btn-sm">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    New tag
+                  </button>
+                </div>
+                <div id="tags-list" class="tpl-manage-list"></div>
+              </div>
+            </div>
+
             <!-- Danger zone -->
             <div class="set-block">
               <span class="eyebrow">Danger zone</span>
@@ -578,6 +601,33 @@
     </div>
   </dialog>
 
+  <!-- Create / edit tag -->
+  <dialog id="tag-dialog" class="app-dialog">
+    <div class="dialog" style="max-width:420px">
+      <div class="dialog-head">
+        <h2 id="tag-dialog-title">New tag</h2>
+        <button class="close-x" id="btn-close-tag" aria-label="Close dialog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form id="tag-form" class="dialog-body">
+        <div class="form-row">
+          <label for="tag-name-input">Tag name</label>
+          <input type="text" id="tag-name-input" class="input" required maxlength="40" placeholder="e.g. Client" autocomplete="off">
+        </div>
+        <div class="form-row">
+          <label>Color</label>
+          <div class="tag-color-grid" id="tag-color-grid"></div>
+          <input type="hidden" id="tag-color-input" value="#3b82f6">
+        </div>
+      </form>
+      <div class="dialog-foot">
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-cancel-tag">Cancel</button>
+        <button type="submit" form="tag-form" class="btn btn-primary btn-sm">Save tag</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- ==================== AUTH ==================== -->
   <div id="auth-overlay" class="auth-overlay" style="display:flex">
     <div class="auth-wrap">
@@ -611,6 +661,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="app.js?v=17"></script>
+  <script src="app.js?v=18"></script>
 </body>
 </html>

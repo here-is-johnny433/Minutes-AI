@@ -46,6 +46,7 @@ function serialize(m) {
     date: m.date,
     rawDate: m.rawDate,
     template: m.template,
+    tags: m.tags || [],
     transcript: m.transcript || '',
     notes: m.notes || ''
   };
@@ -77,6 +78,7 @@ function sanitizeUser(raw) {
 
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const TEMPLATES_FILE = path.join(DATA_DIR, 'templates.json');
+const TAGS_FILE = path.join(DATA_DIR, 'tags.json');
 const SECRET_FILE = path.join(DATA_DIR, '.session_secret');
 
 // Session-signing secret: from env, else generated once and persisted so
@@ -200,6 +202,41 @@ async function seedAdmin() {
     await saveUsers(users);
     console.log('[minutes-ai-api] seeded default admin (admin/admin123) — change the password!');
   }
+}
+
+// ==========================================================================
+// TAG store (DATA_DIR/tags.json) — global, admin-managed label library.
+// Shared by every user; only admins can create/edit/delete. Each record is
+// { id, name, color, createdAt }. Tags are attached to meetings by id array.
+// ==========================================================================
+const TAG_NAME_MAX = 40;
+
+function sanitizeTagId(raw) {
+  const s = String(raw || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '').slice(0, 64);
+  return s.length > 0 ? s : null;
+}
+
+function uniqueTagId(name, tags) {
+  const base = slug(name) || 'tag';
+  const taken = new Set(tags.map((t) => t.id));
+  let id = base, n = 2;
+  while (taken.has(id)) id = `${base}-${n++}`;
+  return id;
+}
+
+async function loadTags() {
+  try {
+    const arr = JSON.parse(await fs.readFile(TAGS_FILE, 'utf8'));
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    if (e.code === 'ENOENT') return [];
+    throw e;
+  }
+}
+
+async function saveTags(tags) {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.writeFile(TAGS_FILE, JSON.stringify(tags, null, 2));
 }
 
 // ==========================================================================
@@ -621,6 +658,52 @@ app.delete('/api/templates/:id', requireAuth, requireAdmin, async (req, res) => 
   const next = templates.filter((t) => t.id !== id);
   if (next.length === templates.length) return res.status(404).json({ error: 'template not found' });
   await saveTemplates(next);
+  res.json({ ok: true });
+});
+
+// ---- Tag management (read: any user; write: admin only) ----
+app.get('/api/tags', requireAuth, async (_, res) => {
+  try {
+    res.json(await loadTags());
+  } catch (e) {
+    console.error('load tags failed', e);
+    res.status(500).json({ error: 'could not load tags' });
+  }
+});
+
+app.post('/api/tags', requireAuth, requireAdmin, async (req, res) => {
+  const name = String((req.body && req.body.name) || '').trim();
+  const color = String((req.body && req.body.color) || '#3b82f6').trim();
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  if (name.length > TAG_NAME_MAX) return res.status(400).json({ error: `name must be ${TAG_NAME_MAX} characters or fewer` });
+  const tags = await loadTags();
+  const tag = { id: uniqueTagId(name, tags), name, color, createdAt: new Date().toISOString().slice(0, 10) };
+  tags.push(tag);
+  await saveTags(tags);
+  res.json(tag);
+});
+
+app.put('/api/tags/:id', requireAuth, requireAdmin, async (req, res) => {
+  const id = sanitizeTagId(req.params.id);
+  const name = String((req.body && req.body.name) || '').trim();
+  const color = String((req.body && req.body.color) || '#3b82f6').trim();
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  if (name.length > TAG_NAME_MAX) return res.status(400).json({ error: `name must be ${TAG_NAME_MAX} characters or fewer` });
+  const tags = await loadTags();
+  const tag = tags.find((t) => t.id === id);
+  if (!tag) return res.status(404).json({ error: 'tag not found' });
+  tag.name = name;
+  tag.color = color;
+  await saveTags(tags);
+  res.json(tag);
+});
+
+app.delete('/api/tags/:id', requireAuth, requireAdmin, async (req, res) => {
+  const id = sanitizeTagId(req.params.id);
+  const tags = await loadTags();
+  const next = tags.filter((t) => t.id !== id);
+  if (next.length === tags.length) return res.status(404).json({ error: 'tag not found' });
+  await saveTags(next);
   res.json({ ok: true });
 });
 

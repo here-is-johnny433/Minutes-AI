@@ -38,6 +38,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // `templates` is a lookup map keyed by id; `templateList` keeps server order.
     templates: {},
     templateList: [],
+    // Tags — global, admin-managed labels. `tags` is an id→tag map; `tagList`
+    // keeps server order. `selectedTags` holds id strings for the current meeting.
+    tags: {},
+    tagList: [],
+    selectedTags: [],
   };
 
   // ==========================================
@@ -119,6 +124,21 @@ document.addEventListener('DOMContentLoaded', () => {
     templateNotesInput: document.getElementById('template-notes-input'),
     btnCloseTemplate: document.getElementById('btn-close-template'),
     btnCancelTemplate: document.getElementById('btn-cancel-template'),
+    // Tag picker (workspace step 01)
+    tagPicker: document.getElementById('tag-picker'),
+    tagPickerRow: document.getElementById('tag-picker-row'),
+    tagPickerDropdown: document.getElementById('tag-picker-dropdown'),
+    // Tag manager (Settings → Tags)
+    tagsList: document.getElementById('tags-list'),
+    btnAddTag: document.getElementById('btn-add-tag'),
+    tagDialog: document.getElementById('tag-dialog'),
+    tagForm: document.getElementById('tag-form'),
+    tagDialogTitle: document.getElementById('tag-dialog-title'),
+    tagNameInput: document.getElementById('tag-name-input'),
+    tagColorInput: document.getElementById('tag-color-input'),
+    tagColorGrid: document.getElementById('tag-color-grid'),
+    btnCloseTag: document.getElementById('btn-close-tag'),
+    btnCancelTag: document.getElementById('btn-cancel-tag'),
     
     // Dialog Overlays
     generatingDialog: document.getElementById('generating-dialog'),
@@ -775,6 +795,241 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ==========================================================================
+  // TAG MANAGEMENT
+  // ==========================================================================
+
+  const TAG_COLORS = [
+    '#3b82f6', '#8b5cf6', '#10b981', '#f59e0b',
+    '#ef4444', '#ec4899', '#14b8a6', '#f97316'
+  ];
+
+  async function fetchTags() {
+    try {
+      const r = await fetch('/api/tags', { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const list = await r.json();
+      state.tagList = Array.isArray(list) ? list : [];
+    } catch (err) {
+      console.error('Failed to load tags', err);
+      state.tagList = [];
+    }
+    state.tags = {};
+    state.tagList.forEach((t) => { state.tags[t.id] = t; });
+    return state.tagList;
+  }
+
+  // ---- Tag picker (workspace step 01) ----
+
+  let tagPickerOpen = false;
+
+  function renderTagPicker() {
+    const picker = elements.tagPicker;
+    const row = elements.tagPickerRow;
+    if (!picker || !row) return;
+    row.innerHTML = '';
+
+    state.selectedTags.forEach((id) => {
+      const tag = state.tags[id];
+      if (!tag) return;
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      chip.style.borderColor = tag.color + '55';
+      chip.style.background = tag.color + '18';
+      chip.style.color = tag.color;
+      chip.innerHTML = `<span class="tag-dot" style="background:${esc(tag.color)}"></span>${esc(tag.name)}<button class="tag-chip-remove" type="button" aria-label="Remove tag">×</button>`;
+      chip.querySelector('.tag-chip-remove').addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.selectedTags = state.selectedTags.filter((x) => x !== id);
+        renderTagPicker();
+      });
+      row.appendChild(chip);
+    });
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'tag-add-btn';
+    addBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add tag</span>`;
+    addBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      tagPickerOpen = !tagPickerOpen;
+      if (tagPickerOpen) renderTagDropdown();
+      elements.tagPickerDropdown.style.display = tagPickerOpen ? 'block' : 'none';
+    });
+    row.appendChild(addBtn);
+  }
+
+  function renderTagDropdown() {
+    const dd = elements.tagPickerDropdown;
+    if (!dd) return;
+    dd.innerHTML = '';
+    if (!state.tagList.length) {
+      const empty = document.createElement('div');
+      empty.className = 'tag-pick-empty';
+      const isAdmin = state.currentUser && state.currentUser.role === 'admin';
+      if (isAdmin) {
+        empty.innerHTML = 'No tags yet. <button class="accent-link" style="background:none;border:none;cursor:pointer;font-size:inherit;padding:0">Create in Settings →</button>';
+        empty.querySelector('button').addEventListener('click', () => {
+          tagPickerOpen = false;
+          elements.tagPickerDropdown.style.display = 'none';
+          switchView('settings');
+        });
+      } else {
+        empty.textContent = 'No tags defined yet.';
+      }
+      dd.appendChild(empty);
+      return;
+    }
+    state.tagList.forEach((tag) => {
+      const selected = state.selectedTags.includes(tag.id);
+      const opt = document.createElement('div');
+      opt.className = 'tag-pick-option' + (selected ? ' is-selected' : '');
+      opt.innerHTML = `<span class="tag-dot" style="background:${esc(tag.color)}"></span><span>${esc(tag.name)}</span><svg class="tag-pick-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+      opt.addEventListener('click', () => {
+        if (selected) {
+          state.selectedTags = state.selectedTags.filter((x) => x !== tag.id);
+        } else {
+          state.selectedTags = [...state.selectedTags, tag.id];
+        }
+        renderTagPicker();
+        renderTagDropdown();
+      });
+      dd.appendChild(opt);
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!elements.tagPicker || !elements.tagPickerDropdown) return;
+    if (!elements.tagPicker.contains(e.target)) {
+      tagPickerOpen = false;
+      elements.tagPickerDropdown.style.display = 'none';
+    }
+  });
+
+  // ---- Tag manager (Settings → Tags) ----
+
+  let editingTagId = null;
+
+  function renderTagsManager() {
+    const list = elements.tagsList;
+    if (!list) return;
+    list.innerHTML = '';
+    if (!state.tagList.length) {
+      const empty = document.createElement('p');
+      empty.className = 'hint';
+      empty.textContent = 'No tags yet. Create one to make it available in the workspace.';
+      list.appendChild(empty);
+      return;
+    }
+    state.tagList.forEach((t) => {
+      const row = document.createElement('div');
+      row.className = 'tpl-manage-row';
+
+      const info = document.createElement('div');
+      info.className = 'tpl-manage-info';
+      const nameLine = document.createElement('div');
+      nameLine.className = 'tpl-manage-name';
+      nameLine.style.cssText = 'display:flex;align-items:center;gap:8px';
+      nameLine.innerHTML = `<span class="tag-manage-color" style="background:${esc(t.color)}"></span>${esc(t.name)}`;
+      info.appendChild(nameLine);
+
+      const actions = document.createElement('div');
+      actions.className = 'row-actions';
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn btn-ghost btn-sm';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', () => openTagDialog(t));
+      const delBtn = document.createElement('button');
+      delBtn.className = 'icon-btn danger';
+      delBtn.title = 'Delete tag';
+      delBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+      delBtn.addEventListener('click', () => deleteTag(t));
+      actions.appendChild(editBtn);
+      actions.appendChild(delBtn);
+
+      row.appendChild(info);
+      row.appendChild(actions);
+      list.appendChild(row);
+    });
+  }
+
+  function openTagDialog(tag) {
+    editingTagId = tag ? tag.id : null;
+    elements.tagDialogTitle.textContent = tag ? 'Edit tag' : 'New tag';
+    elements.tagNameInput.value = tag ? tag.name : '';
+    const color = tag ? tag.color : TAG_COLORS[0];
+    elements.tagColorInput.value = color;
+    renderTagColorGrid(color);
+    if (typeof elements.tagDialog.showModal === 'function') {
+      elements.tagDialog.showModal();
+    } else {
+      elements.tagDialog.setAttribute('open', '');
+    }
+    elements.tagNameInput.focus();
+  }
+
+  function closeTagDialog() {
+    if (elements.tagDialog.open) elements.tagDialog.close();
+    else elements.tagDialog.removeAttribute('open');
+  }
+
+  function renderTagColorGrid(selectedColor) {
+    const grid = elements.tagColorGrid;
+    if (!grid) return;
+    grid.innerHTML = '';
+    TAG_COLORS.forEach((c) => {
+      const sw = document.createElement('button');
+      sw.type = 'button';
+      sw.className = 'tag-color-swatch' + (c === selectedColor ? ' is-active' : '');
+      sw.style.background = c;
+      sw.title = c;
+      sw.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+      sw.addEventListener('click', () => {
+        elements.tagColorInput.value = c;
+        renderTagColorGrid(c);
+      });
+      grid.appendChild(sw);
+    });
+  }
+
+  async function saveTagFromDialog() {
+    const name = elements.tagNameInput.value.trim();
+    const color = elements.tagColorInput.value || TAG_COLORS[0];
+    if (!name) { showToast('Tag name cannot be empty.', 'error'); return; }
+    const editing = !!editingTagId;
+    const url = editing ? '/api/tags/' + encodeURIComponent(editingTagId) : '/api/tags';
+    try {
+      const r = await fetch(url, {
+        method: editing ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, color })
+      });
+      if (!r.ok) { const er = await r.json().catch(() => ({})); throw new Error(er.error || ('HTTP ' + r.status)); }
+      await fetchTags();
+      renderTagsManager();
+      renderTagPicker();
+      closeTagDialog();
+      showToast(`Tag "${name}" ${editing ? 'updated' : 'created'}.`, 'success');
+    } catch (err) {
+      showToast('Could not save tag: ' + err.message, 'error');
+    }
+  }
+
+  async function deleteTag(tag) {
+    if (!confirm(`Delete the tag "${tag.name}"? Existing meetings that used it are not affected.`)) return;
+    try {
+      const r = await fetch('/api/tags/' + encodeURIComponent(tag.id), { method: 'DELETE' });
+      if (!r.ok) { const er = await r.json().catch(() => ({})); throw new Error(er.error || ('HTTP ' + r.status)); }
+      state.selectedTags = state.selectedTags.filter((x) => x !== tag.id);
+      await fetchTags();
+      renderTagsManager();
+      renderTagPicker();
+      showToast(`Tag "${tag.name}" deleted.`, 'success');
+    } catch (err) {
+      showToast('Could not delete tag: ' + err.message, 'error');
+    }
+  }
+
   function initSettingsPanel() {
     // Fill values
     elements.apiKeyInput.value = state.apiKey;
@@ -867,6 +1122,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Render whatever templates are already loaded into state
     renderTemplatesManager();
+
+    // Tag manager — create / edit / delete (server-backed, admin only)
+    if (elements.btnAddTag) {
+      elements.btnAddTag.addEventListener('click', () => openTagDialog(null));
+    }
+    if (elements.tagForm) {
+      elements.tagForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        saveTagFromDialog();
+      });
+    }
+    if (elements.btnCloseTag) elements.btnCloseTag.addEventListener('click', closeTagDialog);
+    if (elements.btnCancelTag) elements.btnCancelTag.addEventListener('click', closeTagDialog);
+
+    // Render whatever tags are already loaded into state
+    renderTagsManager();
 
     // Check Local Gemini Nano Status
     checkLocalGeminiNanoAvailability();
@@ -1381,6 +1652,8 @@ document.addEventListener('DOMContentLoaded', () => {
     setNotesContent(elements.notesInput, '');
     if (state.audioFile && state.audioFile.file && elements.btnRemoveAudio) elements.btnRemoveAudio.click();
     if (state.textFile && state.textFile.name && elements.btnRemoveText) elements.btnRemoveText.click();
+    state.selectedTags = [];
+    renderTagPicker();
   }
 
   function stopRecording() {
@@ -1656,6 +1929,7 @@ document.addEventListener('DOMContentLoaded', () => {
         transcript: state.inputMethod === 'audio-file' ? `[Synthesized from uploaded audio file: ${state.audioFile.name}]` : transcript,
         notes: notes,
         template: templateKey,
+        tags: [...state.selectedTags],
         summary: summaryResult
       };
 
@@ -1909,11 +2183,21 @@ document.addEventListener('DOMContentLoaded', () => {
       const showOwner = viewerIsAdmin && m._owner && m._owner !== state.currentUser.username;
       const ownerTag = showOwner ? `<span class="arch-owner">by ${esc(m._owner)}</span>` : '';
 
+      const tagIds = Array.isArray(m.tags) ? m.tags : [];
+      const tagChipsHtml = tagIds.length
+        ? `<div class="arch-tags">${tagIds.map((id) => {
+            const t = state.tags[id];
+            if (!t) return '';
+            return `<span class="tag-chip" style="border-color:${esc(t.color)}55;background:${esc(t.color)}18;color:${esc(t.color)}"><span class="tag-dot" style="background:${esc(t.color)}"></span>${esc(t.name)}</span>`;
+          }).join('')}</div>`
+        : '';
+
       card.innerHTML = `
         <div class="arch-top">
           <span class="arch-tag">${esc(tmplName)}</span>
           <span class="arch-date mono">${esc(m.date)}</span>
         </div>
+        ${tagChipsHtml}
         <h3>${esc(m.title)}</h3>
         <p>${esc(teaserText)}</p>
         <div class="arch-foot">
@@ -2192,6 +2476,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     await fetchTemplates();
     refreshTemplateSelectors();
+    await fetchTags();
+    renderTagPicker();
     renderArchiveGrid();
     switchView('dashboard');
   }
